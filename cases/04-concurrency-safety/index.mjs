@@ -4,7 +4,7 @@
  * @description 演示哪些工具可以并发执行（读），哪些必须串行（写）
  */
 
-import { allTools } from '../../lib/mock-tools.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 
 console.log('=== Case 04: 并发安全判断 ===\n');
 

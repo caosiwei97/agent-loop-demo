@@ -5,8 +5,8 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createMultiTurnModel } from '../../lib/mock-model.mjs';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { createMultiTurnModel } from '../lib/mock-model.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 import { streamText } from 'ai';
 
 // ============================================================================

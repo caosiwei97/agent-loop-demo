@@ -46,13 +46,14 @@
 
 ```
 agent-teaching-demo/
+├── source/                      # 知识来源（人工维护）
+│   ├── Agent-Loop-深度分享.md    # 原始教学长文
+│   └── assets/                  # 原始素材（Excalidraw 蓝图等）
+├── cases/                       # 12 个教学案例（AI 基于来源生成）
+│   └── lib/                     # 共享模块（mock-model、retry、loop-detection 等）
 ├── apps/
-│   ├── server/          # Hono 后端 — 案例管理、代码执行、静态资源
-│   └── web/             # React + Vite 前端 — 知识树、可视化、交互式 UI
-├── cases/               # 12 个教学案例（各自包含 .md/.mjs/.mmd/.html）
-├── content/             # 全局 Excalidraw 蓝图
-├── lib/                 # 共享模块（mock-model、retry、loop-detection 等）
-└── docs/                # 参考资料
+│   ├── server/                  # Hono 后端 — 案例管理、代码执行、静态资源
+│   └── web/                     # React + Vite 前端 — 知识树、可视化、交互式 UI
 ```
 
 ### 技术栈

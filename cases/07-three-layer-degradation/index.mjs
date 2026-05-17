@@ -4,8 +4,8 @@
  * @description 演示三层容错降级：流式重试 -> 非流式降级 -> 模型降级
  */
 
-import { createMockModel } from '../../lib/mock-model.mjs';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { createMockModel } from '../lib/mock-model.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 import { streamText } from 'ai';
 
 // ============================================================================

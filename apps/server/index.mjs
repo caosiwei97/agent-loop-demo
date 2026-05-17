@@ -69,7 +69,7 @@ app.get('/api/cases', (c) => {
   try {
     const casesDir = join(rootDir, 'cases');
     const entries = readdirSync(casesDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && !d.name.startsWith('_'))
+      .filter(d => d.isDirectory() && !d.name.startsWith('_') && d.name !== 'lib')
       .map(d => d.name)
       .sort();
 
@@ -137,7 +137,7 @@ app.get('/api/cases', (c) => {
 // GET /api/excalidraw/* - 返回 excalidraw 场景文件
 // ============================================================================
 app.get('/api/excalidraw/overview', (c) => {
-  const filepath = join(rootDir, 'content', 'overview.excalidraw');
+  const filepath = join(rootDir, 'source', 'assets', 'overview.excalidraw');
   if (!existsSync(filepath)) return c.json({ error: 'not found' }, 404);
   try {
     return c.json(JSON.parse(readFileSync(filepath, 'utf-8')));
@@ -156,7 +156,7 @@ app.get('/api/excalidraw/cases/:caseId', (c) => {
     const indexContent = existsSync(join(caseDir, 'index.mjs')) ? readFileSync(join(caseDir, 'index.mjs'), 'utf-8') : '';
     const group = (indexContent.match(/@group\s+(.+)/) || [])[1]?.trim() || '';
     if (group === '运行时安全') {
-      filepath = join(rootDir, 'content', 'section-3-fuses.excalidraw');
+      filepath = join(rootDir, 'source', 'assets', 'section-3-fuses.excalidraw');
     }
   }
 
@@ -170,7 +170,7 @@ app.get('/api/excalidraw/cases/:caseId', (c) => {
 
 app.get('/api/excalidraw/section/:name', (c) => {
   const name = c.req.param('name');
-  const filepath = join(rootDir, 'content', name + '.excalidraw');
+  const filepath = join(rootDir, 'source', 'assets', name + '.excalidraw');
   if (!existsSync(filepath)) return c.json({ error: 'not found' }, 404);
   try {
     return c.json(JSON.parse(readFileSync(filepath, 'utf-8')));
@@ -207,7 +207,7 @@ app.get('/api/file/cases/:caseId/:file', (c) => {
 
 app.get('/api/file/lib/:file', (c) => {
   const file = c.req.param('file');
-  const libDir = join(rootDir, 'lib');
+  const libDir = join(rootDir, 'cases', 'lib');
   const filepath = join(libDir, file);
 
   if (!isPathSafe(file, libDir)) {
@@ -262,7 +262,7 @@ app.post('/api/run', async (c) => {
     };
 
     // 将代码写入临时文件到对应案例目录下
-    // 这样相对路径 (../../lib/) 才能正确解析
+    // 这样相对路径 (../lib/) 才能正确解析
     const caseDir = join(rootDir, 'cases', caseId);
     const codeToRun = code || readFileSync(join(caseDir, 'index.mjs'), 'utf-8');
     const tmpName = `_run_${Date.now()}.mjs`;

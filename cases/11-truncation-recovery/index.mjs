@@ -4,8 +4,8 @@
  * @description 演示模型输出被截断后的渐进式恢复策略
  */
 
-import { createTruncatingModel, createMockModel, createMultiTurnModel } from '../../lib/mock-model.mjs';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { createTruncatingModel, createMockModel, createMultiTurnModel } from '../lib/mock-model.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 import { streamText } from 'ai';
 
 // ============================================================================

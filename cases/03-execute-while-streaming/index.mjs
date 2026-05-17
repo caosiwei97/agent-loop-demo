@@ -4,9 +4,9 @@
  * @description 演示"边说边执行"——工具块一完成就立即执行，不等整条消息说完
  */
 
-import { createMultiTurnModel } from '../../lib/mock-model.mjs';
+import { createMultiTurnModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 
 console.log('=== Case 03: 边说边执行 ===\n');
 

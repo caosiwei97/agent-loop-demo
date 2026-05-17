@@ -4,9 +4,9 @@
  * @description 演示工具调用的参数 JSON 如何通过流式碎片拼接而成
  */
 
-import { createMockModel } from '../../lib/mock-model.mjs';
+import { createMockModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 
 console.log('=== Case 02: Tool Call 流式解析 ===\n');
 

@@ -4,7 +4,7 @@
  * @description 演示如何检测"沉默的杀手"——连接没断但不再推送数据
  */
 
-import { createMockModel } from '../../lib/mock-model.mjs';
+import { createMockModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
 
 console.log('=== Case 06: SSE 心跳 + 超时检测 ===\n');

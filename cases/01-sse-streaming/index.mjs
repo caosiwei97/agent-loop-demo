@@ -4,7 +4,7 @@
  * @description 演示 LLM 如何通过 SSE 逐 token 输出，模拟"打字机效果"
  */
 
-import { createMockModel } from '../../lib/mock-model.mjs';
+import { createMockModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
 
 console.log('=== Case 01: SSE 流式响应基础 ===\n');

@@ -4,8 +4,8 @@
  * @description 演示 Token 预算的两道防线：90% nudge + 递减回报检测
  */
 
-import { createMultiTurnModel } from '../../lib/mock-model.mjs';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { createMultiTurnModel } from '../lib/mock-model.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 import { streamText } from 'ai';
 
 // ============================================================================

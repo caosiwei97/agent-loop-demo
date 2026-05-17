@@ -4,9 +4,9 @@
  * @description 演示指数退避重试策略，为什么固定间隔会导致"重试风暴"
  */
 
-import { createFailingModel } from '../../lib/mock-model.mjs';
+import { createFailingModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
-import { allTools } from '../../lib/mock-tools.mjs';
+import { allTools } from '../lib/mock-tools.mjs';
 
 console.log('=== Case 05: 指数退避 + 随机抖动 ===\n');
 
