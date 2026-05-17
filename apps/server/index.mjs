@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
-import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { join, dirname, normalize, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -261,27 +261,49 @@ app.post('/api/run', async (c) => {
       send('stdout', args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n');
     };
 
-    // 将代码写入临时文件到对应案例目录下
-    // 这样相对路径 (../lib/) 才能正确解析
+    // 用子进程执行案例代码，避免 import() 触发 --watch 重启
+    // 同时把相对路径的 import 重写为绝对路径，保证子进程能正确解析模块
     const caseDir = join(rootDir, 'cases', caseId);
-    const codeToRun = code || readFileSync(join(caseDir, 'index.mjs'), 'utf-8');
-    const tmpName = `_run_${Date.now()}.mjs`;
-    const tmpFile = join(caseDir, tmpName);
+    const libDir = join(rootDir, 'cases', 'lib');
+    let codeToRun = code || readFileSync(join(caseDir, 'index.mjs'), 'utf-8');
+
+    // 重写相对路径: '../lib/xxx.mjs' → 绝对路径
+    codeToRun = codeToRun.replace(
+      /from\s+['"](\.\.\/lib\/[^'"]+)['"]/g,
+      (_, p) => `from 'file://${join(libDir, p.replace('../lib/', ''))}'`
+    );
+    codeToRun = codeToRun.replace(
+      /from\s+['"](\.\/[^'"]+)['"]/g,
+      (_, p) => `from 'file://${join(caseDir, p.replace('./', ''))}'`
+    );
 
     try {
-      writeFileSync(tmpFile, codeToRun, 'utf-8');
-      await import(`file://${tmpFile}`);
-      // 等待所有异步操作完成：case 文件通常以 main().catch(console.error) 结尾
-      // await import() 只等模块顶层代码执行完，不等 main() 的 promise resolve
-      // 策略：轮询等待，直到 500ms 内没有新输出（说明执行完毕）
-      // 最大等待 60 秒
-      const QUIET_MS = 500;
-      const MAX_WAIT_MS = 60000;
-      const startTime = Date.now();
-      while (Date.now() - lastOutputAt < QUIET_MS && Date.now() - startTime < MAX_WAIT_MS) {
-        await new Promise(r => setTimeout(r, 100));
-      }
-      send('exit', JSON.stringify({ code: 0 }));
+      const { spawn } = await import('node:child_process');
+      const child = spawn(process.execPath, ['--input-type=module', '-e', codeToRun], {
+        cwd: caseDir,
+        env: { ...process.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      child.stdout.on('data', (chunk) => {
+        send('stdout', chunk.toString());
+      });
+      child.stderr.on('data', (chunk) => {
+        send('stderr', chunk.toString());
+      });
+
+      // 等待子进程退出（超时 60 秒）
+      const exitPromise = new Promise((resolve) => {
+        child.on('close', (code) => resolve(code ?? 0));
+      });
+      const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => { child.kill(); resolve(1); }, 60000);
+      });
+      const exitCode = await Promise.race([exitPromise, timeoutPromise]);
+
+      // 等待 300ms 让最后一批 stdout/stderr 事件发送完毕
+      await new Promise(r => setTimeout(r, 300));
+      send('exit', JSON.stringify({ code: exitCode }));
     } catch (err) {
       send('stderr', err.message + '\n');
       if (err.stack) send('stderr', err.stack + '\n');
@@ -292,8 +314,6 @@ app.post('/api/run', async (c) => {
     console.log = origLog;
     console.error = origError;
     console.warn = origWarn;
-
-    try { unlinkSync(tmpFile); } catch {}
   });
 });
 

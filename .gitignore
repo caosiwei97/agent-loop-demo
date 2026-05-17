@@ -3,3 +3,4 @@ dist/
 .pnpm-store/
 *.tsbuildinfo
 .playwright-mcp
+_run_*.mjs
