@@ -100,7 +100,7 @@ export default function ExcalidrawTab({ caseId }: ExcalidrawTabProps) {
       >
         <Excalidraw
           initialData={{ ...initialData, scrollToContent: true }}
-          viewModeEnabled={isOverview}
+          viewModeEnabled={false}
           theme="dark"
           langCode="zh-CN"
           gridModeEnabled={false}
