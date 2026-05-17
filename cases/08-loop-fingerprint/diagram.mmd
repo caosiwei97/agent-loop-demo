@@ -1,0 +1,21 @@
+flowchart LR
+    INPUT["工具调用<br/>name + params"] --> SORT["Object.keys(params).sort()"]
+    SORT --> SERIALIZE["JSON.stringify<br/>(稳定序列化)"]
+    SERIALIZE --> HASH["SHA256 哈希"]
+    HASH --> FP["指纹: 前 12 位<br/>例: 'a3f5b2c8d1e9'"]
+
+    INPUT2["工具结果<br/>result"] --> HASH2["SHA256 哈希"]
+    HASH2 --> RFP["结果指纹: 前 12 位"]
+
+    FP --> COMPARE{"调用指纹相同?"}
+    RFP --> COMPARE2{"结果指纹相同?"}
+
+    COMPARE -->|"是"| COMPARE2
+    COMPARE -->|"否"| NORMAL["✅ 首次出现"]
+
+    COMPARE2 -->|"是"| NO_PROGRESS["⚠️ 无进展 = 死循环"]
+    COMPARE2 -->|"否"| PROGRESS["✅ 有进展 = 合法轮询"]
+
+    style NO_PROGRESS fill:#ffc9c9,stroke:#ef4444
+    style PROGRESS fill:#b2f2bb,stroke:#22c55e
+    style NORMAL fill:#a5d8ff,stroke:#4a9eed

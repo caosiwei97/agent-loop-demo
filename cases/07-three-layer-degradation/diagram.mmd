@@ -1,0 +1,28 @@
+graph TB
+    subgraph Layer1["Layer 1: 流式请求"]
+        L1A["指数退避重试<br/>最多 10 次"]
+        L1B{"连续失败?"}
+        L1A --> L1B
+    end
+
+    subgraph Layer2["Layer 2: 非流式降级"]
+        L2A["切换为非流式请求<br/>超时 120 秒"]
+        L2B{"连续 3 次 529?"}
+        L2A --> L2B
+    end
+
+    subgraph Layer3["Layer 3: 模型降级"]
+        L3A["Opus → Sonnet<br/>换模型不重建上下文"]
+        L3A2["重新开始请求"]
+        L3A --> L3A2
+    end
+
+    L1B -->|"连续失败"| L2A
+    L2B -->|"连续 3 次 529"| L3A
+
+    L3A2 --> SUCCESS["✅ 成功"]
+
+    style Layer1 fill:#e5dbff,stroke:#8b5cf6
+    style Layer2 fill:#fff3bf,stroke:#f59e0b
+    style Layer3 fill:#ffc9c9,stroke:#ef4444
+    style SUCCESS fill:#b2f2bb,stroke:#22c55e

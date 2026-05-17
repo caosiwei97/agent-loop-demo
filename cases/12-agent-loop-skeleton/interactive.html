@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Loop 完整模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+h2{color:#569cd6;font-size:16px}
+.config{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:13px}
+.config label{color:#858585}
+.config input{background:#333;color:#dcdcaa;border:1px solid #555;border-radius:3px;padding:4px 8px;width:80px;font-family:inherit}
+.controls{display:flex;gap:8px;align-items:center}
+button{background:#0e639c;color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:10px;overflow:hidden}
+.left{flex:2;display:flex;flex-direction:column;gap:8px}
+.right{flex:1;display:flex;flex-direction:column;gap:8px}
+.panel{border:1px solid #333;border-radius:6px;padding:10px;overflow-y:auto;font-size:12px}
+.panel-title{color:#569cd6;font-size:12px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px}
+.turn{margin:4px 0;padding:6px 8px;border-radius:4px;border-left:3px solid #333}
+.turn-text{border-left-color:#dcdcaa;background:rgba(220,221,170,0.05)}
+.turn-tool{border-left-color:#569cd6;background:rgba(86,156,214,0.05)}
+.turn-result{border-left-color:#22c55e;background:rgba(34,197,94,0.05)}
+.turn-warning{border-left-color:#f59e0b;background:rgba(245,158,11,0.1)}
+.turn-error{border-left-color:#ef4444;background:rgba(239,68,68,0.1)}
+.turn-complete{border-left-color:#22c55e;background:rgba(34,197,94,0.1)}
+.turn-label{font-size:11px;color:#858585}
+.turn-content{color:#cccccc;margin-top:2px}
+.fuse{padding:8px;border:1px solid #333;border-radius:6px;transition:all .3s}
+.fuse-title{font-size:12px;font-weight:bold;margin-bottom:4px}
+.fuse-detail{font-size:11px;color:#858585}
+#fuse1{border-color:#8b5cf6}
+#fuse1 .fuse-title{color:#8b5cf6}
+#fuse2{border-color:#f59e0b}
+#fuse2 .fuse-title{color:#f59e0b}
+#fuse3{border-color:#ef4444}
+#fuse3 .fuse-title{color:#ef4444}
+.fuse-active{background:rgba(255,255,255,0.03)}
+.budget-bar{height:10px;background:#333;border-radius:5px;overflow:hidden;margin-top:4px}
+.budget-fill{height:100%;border-radius:5px;transition:width .5s}
+.budget-text{font-size:11px;color:#858585;margin-top:2px}
+.progress{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.progress-dot{width:12px;height:12px;border-radius:50%;background:#333;transition:background .3s}
+.dot-done{background:#22c55e}
+.dot-active{background:#569cd6;animation:pulse 1s infinite}
+.dot-fail{background:#ef4444}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h2>Agent Loop 完整模拟器</h2>
+    <div class="config">
+      <label>MAX_TURNS: <input id="cfgTurns" type="number" value="10" min="1" max="30"></label>
+      <label>TOKEN_BUDGET: <input id="cfgBudget" type="number" value="15000" min="1000"></label>
+    </div>
+    <div class="controls" style="margin-top:8px">
+      <button id="btnStart" onclick="startLoop()">启动 Loop</button>
+      <button onclick="resetAll()">重置</button>
+      <span id="statusText" class="status">配置参数后点击"启动 Loop"</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="panel" style="flex:1">
+        <div class="panel-title">🔄 Agent Loop 执行日志</div>
+        <div id="log"></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel" style="flex:1">
+        <div class="panel-title">⚡ 保险丝状态</div>
+        <div class="fuse" id="fuse1">
+          <div class="fuse-title">保险丝 1: 死循环检测</div>
+          <div class="fuse-detail" id="fuse1detail">无重复调用</div>
+          <div class="progress" id="fuse1dots"></div>
+        </div>
+        <div class="fuse" id="fuse2" style="margin-top:8px">
+          <div class="fuse-title">保险丝 2: Token 预算</div>
+          <div class="budget-bar"><div class="budget-fill" id="budgetFill" style="width:0%;background:#22c55e"></div></div>
+          <div class="budget-text" id="budgetText">0 / 15,000 (0%)</div>
+          <div class="fuse-detail" id="fuse2detail">-</div>
+        </div>
+        <div class="fuse" id="fuse3" style="margin-top:8px">
+          <div class="fuse-title">保险丝 3: 截断恢复</div>
+          <div class="fuse-detail" id="fuse3detail">未触发</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">📊 轮次进度</div>
+        <div class="progress" id="turnDots"></div>
+        <div style="margin-top:8px;font-size:12px;color:#858585">
+          <div>当前轮次: <span id="curTurn" style="color:#dcdcaa">0</span></div>
+          <div>停止原因: <span id="stopReason" style="color:#dcdcaa">-</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+let running = false;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function addLog(type, label, content) {
+  const div = document.createElement('div');
+  div.className = `turn turn-${type}`;
+  div.innerHTML = `<div class="turn-label">${label}</div><div class="turn-content">${content}</div>`;
+  document.getElementById('log').appendChild(div);
+  div.scrollIntoView({behavior:'smooth'});
+}
+function initDots() {
+  const maxTurns = parseInt(document.getElementById('cfgTurns').value) || 10;
+  const dots = document.getElementById('turnDots');
+  dots.innerHTML = '';
+  for(let i = 0; i < maxTurns; i++) {
+    const d = document.createElement('div');
+    d.className = 'progress-dot';
+    d.id = `dot-${i}`;
+    dots.appendChild(d);
+  }
+}
+async function startLoop() {
+  if(running) return;
+  running = true;
+  document.getElementById('btnStart').disabled = true;
+  const maxTurns = parseInt(document.getElementById('cfgTurns').value) || 10;
+  const budget = parseInt(document.getElementById('cfgBudget').value) || 15000;
+  initDots();
+  document.getElementById('statusText').textContent = 'Agent Loop 运行中...';
+  // Simulated turns
+  const turns = [
+    { text: '让我先搜索项目中的 console.log...', tool: 'grep_files', args: '{pattern:"console\\.log"}', result: '找到 3 处匹配', input: 100, output: 50 },
+    { text: '读取第一个文件...', tool: 'read_file', args: '{path:"src/utils.ts"}', result: '文件内容(含1处console.log)', input: 200, output: 60 },
+    { text: '读取第二个文件...', tool: 'read_file', args: '{path:"src/index.ts"}', result: '文件内容(含2处console.log)', input: 300, output: 60 },
+    { text: '让我再确认一下...', tool: 'read_file', args: '{path:"src/utils.ts"}', result: '文件内容(含1处console.log)', input: 400, output: 60 },
+    { text: '修改文件，移除 console.log...', tool: 'write_file', args: '{path:"src/utils.ts"}', result: '写入成功', input: 500, output: 80 },
+    { text: '修改第二个文件...', tool: 'write_file', args: '{path:"src/index.ts"}', result: '写入成功', input: 600, output: 80 },
+    { text: '让我验证一下修改...', tool: 'read_file', args: '{path:"src/utils.ts"}', result: '文件内容(已移除)', input: 700, output: 60 },
+    { text: '所有文件已修改完成。', tool: null, args: null, result: null, input: 800, output: 100 },
+  ];
+  let totalIn = 0, totalOut = 0;
+  let callHistory = {};
+  let nudgeInjected = false;
+  for(let t = 0; t < Math.min(turns.length, maxTurns); t++) {
+    const turn = turns[t];
+    const dot = document.getElementById(`dot-${t}`);
+    if(dot) dot.className = 'progress-dot dot-active';
+    document.getElementById('curTurn').textContent = t + 1;
+    // Text output
+    addLog('text', `Turn ${t+1}/${maxTurns}`, `📝 ${turn.text}`);
+    totalIn += turn.input;
+    totalOut += turn.output;
+    await sleep(300);
+    // Tool call
+    if(turn.tool) {
+      addLog('tool', '工具调用', `🔧 ${turn.tool}(${turn.args})`);
+      await sleep(200);
+      addLog('result', '工具结果', `📦 ${turn.result}`);
+      // Fuse 1: loop detection
+      const key = `${turn.tool}:${turn.args}`;
+      if(!callHistory[key]) callHistory[key] = { count: 0, results: [] };
+      callHistory[key].count++;
+      callHistory[key].results.push(turn.result);
+      const maxRepeat = Math.max(...Object.values(callHistory).map(h => h.count));
+      const repeatTool = Object.entries(callHistory).find(([k,v]) => v.count === maxRepeat);
+      document.getElementById('fuse1detail').textContent = `最多重复: ${maxRepeat} 次`;
+      document.getElementById('fuse1').className = maxRepeat >= 3 ? 'fuse fuse-active' : 'fuse';
+      // Fuse 1 dots
+      const f1dots = document.getElementById('fuse1dots');
+      f1dots.innerHTML = '';
+      for(let d = 0; d < Math.min(maxRepeat, 10); d++) {
+        const dd = document.createElement('div');
+        dd.className = `progress-dot ${d >= 5 ? 'dot-fail' : 'dot-done'}`;
+        f1dots.appendChild(dd);
+      }
+      if(maxRepeat >= 3) {
+        addLog('warning', '保险丝 1', `⚠️ ${turn.tool} 已调用 ${maxRepeat} 次`);
+      }
+    }
+    // Fuse 2: budget
+    const total = totalIn + totalOut;
+    const pct = (total / budget * 100).toFixed(1);
+    const fill = document.getElementById('budgetFill');
+    fill.style.width = `${Math.min(pct, 100)}%`;
+    fill.style.background = pct > 90 ? '#ef4444' : pct > 70 ? '#f59e0b' : '#22c55e';
+    document.getElementById('budgetText').textContent = `${total.toLocaleString()} / ${budget.toLocaleString()} (${pct}%)`;
+    if(!nudgeInjected && pct >= 90) {
+      nudgeInjected = true;
+      document.getElementById('fuse2detail').textContent = '90% nudge 已注入';
+      document.getElementById('fuse2').className = 'fuse fuse-active';
+      addLog('warning', '保险丝 2', `⚠️ Token 90% nudge: "继续工作——不要总结"`);
+    } else if(pct < 90) {
+      document.getElementById('fuse2detail').textContent = `${pct}% 使用中`;
+    }
+    if(dot) dot.className = 'progress-dot dot-done';
+    await sleep(300);
+  }
+  addLog('complete', 'Loop 结束', `✅ 任务完成 — 共 ${Math.min(turns.length, maxTurns)} 轮，Token: ${totalIn + totalOut}`);
+  document.getElementById('stopReason').textContent = 'completed (任务完成)';
+  document.getElementById('statusText').textContent = 'Agent Loop 正常结束';
+  document.getElementById('btnStart').disabled = false;
+  running = false;
+}
+function resetAll() {
+  running = false;
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('turnDots').innerHTML = '';
+  document.getElementById('curTurn').textContent = '0';
+  document.getElementById('stopReason').textContent = '-';
+  document.getElementById('budgetFill').style.width = '0%';
+  document.getElementById('budgetFill').style.background = '#22c55e';
+  document.getElementById('budgetText').textContent = '0 / 15,000 (0%)';
+  document.getElementById('fuse1detail').textContent = '无重复调用';
+  document.getElementById('fuse1dots').innerHTML = '';
+  document.getElementById('fuse1').className = 'fuse';
+  document.getElementById('fuse2detail').textContent = '-';
+  document.getElementById('fuse2').className = 'fuse';
+  document.getElementById('fuse3detail').textContent = '未触发';
+  document.getElementById('statusText').textContent = '配置参数后点击"启动 Loop"';
+  document.getElementById('btnStart').disabled = false;
+}
+</script>
+</body>
+</html>

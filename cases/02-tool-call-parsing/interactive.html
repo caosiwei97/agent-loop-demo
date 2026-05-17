@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool Call 碎片拼接模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:12px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center}
+button{background:#0e639c;color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;font-size:13px}
+.panel-title{color:#569cd6;font-size:12px;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:4px}
+#fragments{background:#252526}
+#accumulated{background:#1a1a2e}
+.frag-item{padding:6px 8px;margin:4px 0;border-radius:3px;transition:all .3s}
+.frag-pending{background:#333;color:#666;border-left:3px solid #555}
+.frag-current{background:#1a3a5c;color:#fff;border-left:3px solid #569cd6}
+.frag-done{background:#1a3c1a;color:#b2f2bb;border-left:3px solid #22c55e}
+.buffer-line{padding:4px 0;font-size:14px}
+.buffer-accumulated{color:#dcdcaa}
+.parse-result{color:#ce9178}
+.parse-ok{color:#4ec9b0}
+.parse-fail{color:#f44747}
+.final{margin-top:12px;padding:10px;border:2px solid #22c55e;border-radius:6px;background:#1a3c1a}
+.final-title{color:#22c55e;font-size:14px;margin-bottom:4px}
+.step-info{color:#858585;font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h2>Tool Call 碎片拼接模拟器</h2>
+    <div class="controls">
+      <button id="btnNext" onclick="nextStep()">下一步</button>
+      <button id="btnAuto" onclick="autoPlay()">自动播放</button>
+      <button onclick="resetAll()">重置</button>
+      <span id="statusText" class="status">按"下一步"推进碎片拼接</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel" id="fragments">
+      <div class="panel-title">📨 到达的 JSON 碎片</div>
+      <div id="fragList"></div>
+    </div>
+    <div class="panel" id="accumulated">
+      <div class="panel-title">📦 累积缓冲区</div>
+      <div id="bufferArea"></div>
+      <div id="parseStatus"></div>
+      <div id="finalResult"></div>
+    </div>
+  </div>
+  <div class="step-info" id="stepInfo">碎片 0/4 — 工具: get_weather, 目标参数: {"city":"北京"}</div>
+</div>
+<script>
+const fragments = [
+  { frag: '{"ci', label: 'fragment 1' },
+  { frag: 'ty":"', label: 'fragment 2' },
+  { frag: '北京"', label: 'fragment 3' },
+  { frag: '}', label: 'fragment 4' }
+];
+let step = 0, accumulated = '', autoTimer = null;
+function initFrags() {
+  const list = document.getElementById('fragList');
+  list.innerHTML = '';
+  fragments.forEach((f,i) => {
+    const div = document.createElement('div');
+    div.className = 'frag-item frag-pending';
+    div.id = `frag-${i}`;
+    div.innerHTML = `<span style="color:#858585">${f.label}:</span> <span style="color:#ce9178">"${f.frag}"</span>`;
+    list.appendChild(div);
+  });
+}
+function nextStep() {
+  if(step >= fragments.length) return;
+  // Mark current
+  const prev = step - 1;
+  if(prev >= 0) {
+    document.getElementById(`frag-${prev}`).className = 'frag-item frag-done';
+  }
+  const cur = document.getElementById(`frag-${step}`);
+  cur.className = 'frag-item frag-current';
+  // Accumulate
+  accumulated += fragments[step].frag;
+  // Update buffer
+  const buf = document.getElementById('bufferArea');
+  buf.innerHTML = `<div class="buffer-line">累积: <span class="buffer-accumulated">"${accumulated}"</span></div>`;
+  // Try parse
+  const ps = document.getElementById('parseStatus');
+  try {
+    const parsed = JSON.parse(accumulated);
+    ps.innerHTML = `<div class="parse-ok">✅ JSON.parse 成功!</div>`;
+  } catch(e) {
+    ps.innerHTML = `<div class="parse-fail">❌ JSON.parse 失败: ${e.message}</div>`;
+  }
+  step++;
+  cur.className = 'frag-item frag-done';
+  document.getElementById('stepInfo').textContent = `碎片 ${step}/${fragments.length} — 累积长度: ${accumulated.length} 字符`;
+  document.getElementById('statusText').textContent = `已收到碎片 ${step}/${fragments.length}`;
+  if(step >= fragments.length) {
+    const fr = document.getElementById('finalResult');
+    const parsed = JSON.parse(accumulated);
+    fr.innerHTML = `<div class="final"><div class="final-title">🎉 解析完成!</div>
+      <div>工具: <span style="color:#569cd6">get_weather</span></div>
+      <div>完整参数: <span style="color:#dcdcaa">${JSON.stringify(parsed)}</span></div>
+      <div>城市: <span style="color:#ce9178">${parsed.city}</span></div></div>`;
+    document.getElementById('statusText').textContent = '拼接完成！所有碎片已组装为合法 JSON';
+    document.getElementById('btnNext').disabled = true;
+    document.getElementById('btnAuto').disabled = true;
+  }
+}
+function autoPlay() {
+  if(autoTimer) { clearInterval(autoTimer); autoTimer = null; document.getElementById('btnAuto').textContent = '自动播放'; return; }
+  document.getElementById('btnAuto').textContent = '暂停';
+  document.getElementById('btnNext').disabled = true;
+  autoTimer = setInterval(() => {
+    if(step >= fragments.length) { clearInterval(autoTimer); autoTimer = null; document.getElementById('btnAuto').textContent = '自动播放'; return; }
+    nextStep();
+  }, 800);
+}
+function resetAll() {
+  if(autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  step = 0; accumulated = '';
+  document.getElementById('fragList').innerHTML = '';
+  document.getElementById('bufferArea').innerHTML = '';
+  document.getElementById('parseStatus').innerHTML = '';
+  document.getElementById('finalResult').innerHTML = '';
+  document.getElementById('stepInfo').textContent = `碎片 0/${fragments.length} — 工具: get_weather, 目标参数: {"city":"北京"}`;
+  document.getElementById('statusText').textContent = '按"下一步"推进碎片拼接';
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('btnAuto').disabled = false;
+  document.getElementById('btnAuto').textContent = '自动播放';
+  initFrags();
+}
+initFrags();
+</script>
+</body>
+</html>

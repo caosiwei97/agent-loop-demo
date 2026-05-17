@@ -1,0 +1,36 @@
+flowchart TB
+    subgraph 并发读["并发读 (安全)"]
+        R1["read_file(A)"]
+        R2["read_file(B)"]
+        R3["read_file(C)"]
+    end
+
+    subgraph 串行写["串行写 (必须独占)"]
+        W1["write_file(X)"]
+        W2["write_file(Y)"]
+    end
+
+    subgraph 级联规则["Bash 错误级联"]
+        B1["Bash: npm build ❌"]
+        B2["Bash: npm test 🚫 取消"]
+        R4["Read: package.json ✅ 不受影响"]
+    end
+
+    START([模型返回多个工具调用]) --> CLASSIFY{工具类型判断}
+
+    CLASSIFY -->|"Read / Grep<br/>(只读)"| CONCURRENT["Promise.all 并发执行"]
+    CLASSIFY -->|"Edit / Write<br/>(写操作)"| SERIAL["逐个串行执行"]
+    CLASSIFY -->|"Bash"| CHECK{看具体命令}
+
+    CHECK -->|"ls / cat<br/>(安全)"| CONCURRENT
+    CHECK -->|"npm install<br/>(不安全)"| SERIAL
+
+    CONCURRENT --> RESULT["结果按调用顺序返回<br/>A→B→C (非完成顺序)"]
+    SERIAL --> RESULT
+
+    B1 -.->|"兄弟取消"| B2
+    B1 -.->|"不影响"| R4
+
+    style 并发读 fill:#0d2818,stroke:#22c55e,color:#86efac
+    style 串行写 fill:#2d1215,stroke:#ef4444,color:#fca5a5
+    style 级联规则 fill:#2d2512,stroke:#f59e0b,color:#fcd34d

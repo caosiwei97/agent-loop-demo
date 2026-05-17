@@ -1,0 +1,32 @@
+flowchart LR
+    subgraph 预算时间线["Token 预算时间线"]
+        direction LR
+        T0["0%"] --> T1["50%"]
+        T1 --> T2["90%"]
+        T2 --> T3["100%"]
+    end
+
+    T2 --> NUDGE["90% Nudge<br/>'继续工作——不要总结'"]
+
+    subgraph 递减回报检测["递减回报检测"]
+        direction TB
+        R1["+3000 Token ✅"]
+        R2["+2500 Token ✅"]
+        R3["+400 Token ⚠️"]
+        R4["+300 Token ❌<br/>连续两次递减 → 停止"]
+        R1 --> R2 --> R3 --> R4
+    end
+
+    T3 --> BUDGET_EXCEED["预算耗尽 → 停止"]
+
+    subgraph 费用计算["费用风险"]
+        direction TB
+        COST1["200轮 × 1000 Token/轮"]
+        COST2["输入 = 10-20x 输出"]
+        COST3["总计: $50-100"]
+        COST1 --> COST2 --> COST3
+    end
+
+    style NUDGE fill:#fff3bf,stroke:#f59e0b
+    style BUDGET_EXCEED fill:#ffc9c9,stroke:#ef4444
+    style COST3 fill:#ffc9c9,stroke:#ef4444

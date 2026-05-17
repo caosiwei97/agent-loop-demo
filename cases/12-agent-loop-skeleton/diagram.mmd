@@ -1,0 +1,27 @@
+graph TB
+    subgraph AgentLoop["Agent Loop 完整循环"]
+        direction TB
+        START(["开始"]) --> PRE["保险丝 1: 死循环检测<br/>四种检测器 + 三级响应"]
+        PRE --> CALL["调用模型<br/>容错: 指数退避 + 三层降级"]
+        CALL --> POST{"模型输出后"}
+        POST -->|"正常"| BUDGET["保险丝 2: Token 预算<br/>90% nudge + 递减回报"]
+        POST -->|"max_tokens"| TRUNC["保险丝 3: 截断恢复<br/>提高上限 → 注入恢复 → 认栽"]
+        BUDGET --> CHECK{"还有工具调用?"}
+        CHECK -->|"是"| PRE
+        CHECK -->|"否"| DONE(["completed"])
+        TRUNC --> CALL
+    end
+
+    subgraph Global["全局兜底"]
+        MAX["max_turns<br/>上下文检查<br/>用户中断"]
+    end
+
+    AgentLoop -.->|"任何阶段"| Global
+
+    style AgentLoop fill:#e5dbff,stroke:#8b5cf6,opacity:30
+    style Global fill:#ffd8a8,stroke:#f59e0b,opacity:30
+    style PRE fill:#ffc9c9,stroke:#ef4444
+    style CALL fill:#a5d8ff,stroke:#4a9eed
+    style BUDGET fill:#fff3bf,stroke:#f59e0b
+    style TRUNC fill:#ffc9c9,stroke:#ef4444
+    style DONE fill:#b2f2bb,stroke:#22c55e

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSE 流式响应模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:12px}
+h2{color:#569cd6;font-size:16px;margin-bottom:4px}
+.controls{display:flex;gap:8px;align-items:center}
+button{background:#0e639c;color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;font-size:13px}
+.panel-title{color:#569cd6;font-size:12px;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:4px}
+#events{background:#252526;border-color:#444}
+#content{background:#1a1a2e;border-color:#444}
+.event-line{margin:2px 0;padding:2px 0;animation:fadeIn .3s}
+.event-type{color:#ce9178}
+.event-data{color:#6a9955}
+.text-delta{color:#dcdcaa}
+.message-start{color:#569cd6}
+.message-stop{color:#4ec9b0}
+.content-block{color:#c586c0}
+.cursor{display:inline-block;width:2px;height:14px;background:#569cd6;animation:blink 1s infinite;vertical-align:middle;margin-left:1px}
+.token{animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.stats{display:flex;gap:16px;font-size:12px;color:#858585;border-top:1px solid #333;padding-top:8px}
+.stat-val{color:#dcdcaa}
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h2>SSE 流式响应模拟器</h2>
+    <div class="controls">
+      <button id="btnSend" onclick="startStream()">发送请求</button>
+      <button id="btnReset" onclick="resetAll()">重置</button>
+      <span id="statusText" class="status">就绪</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel" id="events">
+      <div class="panel-title">📡 SSE 事件流</div>
+      <div id="eventList"></div>
+    </div>
+    <div class="panel" id="content">
+      <div class="panel-title">📝 累积内容</div>
+      <div id="contentArea"></div>
+    </div>
+  </div>
+  <div class="stats">
+    <span>事件数: <span class="stat-val" id="statEvents">0</span></span>
+    <span>已接收 Token: <span class="stat-val" id="statTokens">0</span></span>
+    <span>状态: <span class="stat-val" id="statState">-</span></span>
+  </div>
+</div>
+<script>
+const tokens = ['你好','，','我是','一个',' AI ','助手','。','今天','天气','真不错','，','有什么','可以','帮到你','的吗','？'];
+let eventCount = 0, tokenCount = 0, streaming = false, cursorEl = null;
+function addEvent(type, data) {
+  const el = document.createElement('div');
+  el.className = 'event-line';
+  const ts = (Date.now() % 100000).toString().padStart(5,'0');
+  let cls = 'event-data';
+  if(type==='text-delta') cls='text-delta';
+  else if(type==='message_start') cls='message-start';
+  else if(type==='message_stop') cls='message-stop';
+  else if(type.includes('content_block')) cls='content-block';
+  el.innerHTML = `<span style="color:#858585">[${ts}]</span> <span class="event-type">${type}:</span> <span class="${cls}">${data}</span>`;
+  document.getElementById('eventList').appendChild(el);
+  el.scrollIntoView({behavior:'smooth'});
+  eventCount++;
+  document.getElementById('statEvents').textContent = eventCount;
+}
+function appendContent(text) {
+  if(cursorEl) cursorEl.remove();
+  const span = document.createElement('span');
+  span.className = 'token';
+  span.textContent = text;
+  document.getElementById('contentArea').appendChild(span);
+  cursorEl = document.createElement('span');
+  cursorEl.className = 'cursor';
+  document.getElementById('contentArea').appendChild(cursorEl);
+  tokenCount++;
+  document.getElementById('statTokens').textContent = tokenCount;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function startStream() {
+  if(streaming) return;
+  streaming = true;
+  document.getElementById('btnSend').disabled = true;
+  document.getElementById('statState').textContent = '连接中...';
+  document.getElementById('statusText').textContent = '请求发送中...';
+  await sleep(400);
+  addEvent('message_start','→ 新消息开始');
+  document.getElementById('statState').textContent = '接收中';
+  await sleep(200);
+  addEvent('content_block_start','→ 文本块开始');
+  await sleep(150);
+  for(let i = 0; i < tokens.length; i++) {
+    addEvent('content_block_delta', `"${tokens[i]}"`);
+    appendContent(tokens[i]);
+    document.getElementById('statusText').textContent = `接收 token ${i+1}/${tokens.length}`;
+    await sleep(100 + Math.random() * 80);
+  }
+  await sleep(150);
+  addEvent('content_block_stop','→ 文本块结束');
+  await sleep(200);
+  addEvent('message_delta','→ stop_reason: "end_turn"');
+  await sleep(100);
+  addEvent('message_stop','→ 消息结束');
+  if(cursorEl) cursorEl.remove();
+  document.getElementById('statState').textContent = '完成';
+  document.getElementById('statusText').textContent = '流式响应完成';
+  document.getElementById('btnSend').disabled = false;
+  streaming = false;
+}
+function resetAll() {
+  streaming = false;
+  eventCount = 0; tokenCount = 0;
+  document.getElementById('eventList').innerHTML = '';
+  document.getElementById('contentArea').innerHTML = '';
+  document.getElementById('statEvents').textContent = '0';
+  document.getElementById('statTokens').textContent = '0';
+  document.getElementById('statState').textContent = '-';
+  document.getElementById('statusText').textContent = '就绪';
+  document.getElementById('btnSend').disabled = false;
+}
+</script>
+</body>
+</html>

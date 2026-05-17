@@ -1,0 +1,30 @@
+flowchart TB
+    subgraph 服务端["服务端: 心跳"]
+        HB["定时发送 : heartbeat 注释帧<br/>间隔: 15s"]
+    end
+
+    subgraph 客户端["客户端: 看门狗"]
+        WD["定时检查 lastDataAt<br/>间隔: 5s"]
+        TO["超时阈值: 30s"]
+        WD --> TO
+    end
+
+    HB -->|"推送数据/心跳"| UPDATE["lastDataAt = Date.now()"]
+    UPDATE --> WD
+
+    TO -->|"超过 30s 无数据"| DETECT["检测到沉默!"]
+    DETECT --> RECOVERY["恢复流程"]
+
+    subgraph 恢复流程
+        R1["1. 等几秒 (服务端可能还在写)"]
+        R2["2. 拉取数据库最终状态 (对账)"]
+        R3["3. 用数据库数据覆盖前端"]
+        R4["4. 保留已收到的部分内容"]
+        R1 --> R2 --> R3 --> R4
+    end
+
+    RECOVERY --> R1
+
+    style 服务端 fill:#e5dbff,stroke:#8b5cf6
+    style 客户端 fill:#a5d8ff,stroke:#4a9eed
+    style 恢复流程 fill:#fff3bf,stroke:#f59e0b

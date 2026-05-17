@@ -1,0 +1,19 @@
+{
+  "name": "@agent-teaching/server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.mjs",
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.0",
+    "ai": "^4.3.19",
+    "d3": "^7.9.0",
+    "marked": "^18.0.3",
+    "markmap-lib": "^0.18.12",
+    "markmap-view": "^0.18.12",
+    "mermaid": "^11.15.0"
+  }
+}

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三层降级链模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:12px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#0e639c;color:#fff;border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.layers{display:flex;flex-direction:column;gap:10px;flex:1;overflow-y:auto}
+.layer{border:2px solid #333;border-radius:8px;padding:12px;transition:all .5s;opacity:0.4}
+.layer-active{opacity:1}
+.layer-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.layer-title{font-size:14px;font-weight:bold}
+.layer-status{font-size:12px;padding:2px 8px;border-radius:3px}
+.layer-content{font-size:12px;color:#858585}
+.layer-log{margin-top:6px;font-size:12px;max-height:100px;overflow-y:auto}
+.log-entry{padding:2px 0;animation:fadeIn .3s}
+.log-fail{color:#f44747}
+.log-retry{color:#f59e0b}
+.log-ok{color:#22c55e}
+.log-info{color:#569cd6}
+#layer1{border-color:#8b5cf6}
+#layer1.layer-active{background:rgba(139,92,246,0.08)}
+#layer1 .layer-title{color:#8b5cf6}
+#layer2{border-color:#f59e0b}
+#layer2.layer-active{background:rgba(245,158,11,0.08)}
+#layer2 .layer-title{color:#f59e0b}
+#layer3{border-color:#ef4444}
+#layer3.layer-active{background:rgba(239,68,68,0.08)}
+#layer3 .layer-title{color:#ef4444}
+.layer-done{border-color:#22c55e!important;opacity:1!important}
+.layer-done .layer-title{color:#22c55e!important}
+.budget{display:flex;gap:4px;align-items:center;font-size:12px;margin-top:6px}
+.budget-bar{flex:1;height:8px;background:#333;border-radius:4px;overflow:hidden}
+.budget-fill{height:100%;background:#f59e0b;border-radius:4px;transition:width .3s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h2>三层降级链模拟器</h2>
+    <div class="controls">
+      <button onclick="triggerFailure()">触发故障</button>
+      <button onclick="resetAll()">重置</button>
+      <span id="statusText" class="status">点击"触发故障"开始模拟</span>
+    </div>
+  </div>
+  <div class="layers">
+    <div class="layer layer-active" id="layer1">
+      <div class="layer-header">
+        <span class="layer-title">Layer 1: 流式请求 + 指数退避</span>
+        <span class="layer-status" id="l1status" style="background:#333;color:#858585">待命中</span>
+      </div>
+      <div class="layer-content">策略: 失败后等待时间翻倍 (500ms → 1s → 2s → ...)，最多 10 次</div>
+      <div class="budget">失败预算: <div class="budget-bar"><div class="budget-fill" id="l1budget" style="width:0%"></div></div> <span id="l1budgetText">0/10</span></div>
+      <div class="layer-log" id="l1log"></div>
+    </div>
+    <div class="layer" id="layer2">
+      <div class="layer-header">
+        <span class="layer-title">Layer 2: 非流式降级</span>
+        <span class="layer-status" id="l2status" style="background:#333;color:#858585">待命中</span>
+      </div>
+      <div class="layer-content">策略: 切换为 doGenerate 非流式请求，超时 120 秒，对服务端更友好</div>
+      <div class="budget">剩余预算: <div class="budget-bar"><div class="budget-fill" id="l2budget" style="width:0%"></div></div> <span id="l2budgetText">0/4</span></div>
+      <div class="layer-log" id="l2log"></div>
+    </div>
+    <div class="layer" id="layer3">
+      <div class="layer-header">
+        <span class="layer-title">Layer 3: 模型降级</span>
+        <span class="layer-status" id="l3status" style="background:#333;color:#858585">待命中</span>
+      </div>
+      <div class="layer-content">策略: Claude Opus → Claude Sonnet，换模型不重建上下文</div>
+      <div class="layer-log" id="l3log"></div>
+    </div>
+  </div>
+</div>
+<script>
+let running = false;
+const TOTAL_BUDGET = 10;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function addLog(layerId, msg, cls) {
+  const log = document.getElementById(layerId);
+  const div = document.createElement('div');
+  div.className = `log-entry ${cls}`;
+  div.textContent = msg;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+function setStatus(id, text, color) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.style.background = color;
+  el.style.color = '#fff';
+}
+async function triggerFailure() {
+  if(running) return;
+  running = true;
+  document.getElementById('statusText').textContent = '模拟持续故障...';
+  // Layer 1: 6 次流式重试
+  const l1 = document.getElementById('layer1');
+  l1.classList.add('layer-active');
+  setStatus('l1status', '执行中', '#8b5cf6');
+  const l1Fails = 6;
+  for(let i = 1; i <= l1Fails; i++) {
+    const delay = 500 * Math.pow(2, i-1);
+    const codes = ['429','429','529','429','529','529'];
+    addLog('l1log', `[尝试 ${i}/10] ${codes[i-1]} → 等待 ${delay}ms`, i <= l1Fails ? 'log-fail' : 'log-ok');
+    document.getElementById('l1budget').style.width = `${(i/TOTAL_BUDGET)*100}%`;
+    document.getElementById('l1budgetText').textContent = `${i}/${TOTAL_BUDGET}`;
+    await sleep(400);
+  }
+  addLog('l1log', `连续 ${l1Fails} 次失败，升级到 Layer 2`, 'log-info');
+  setStatus('l1status', '已升级', '#f59e0b');
+  await sleep(300);
+  // Layer 2: 3 次非流式
+  const l2 = document.getElementById('layer2');
+  l2.classList.add('layer-active');
+  setStatus('l2status', '执行中', '#f59e0b');
+  const remaining = TOTAL_BUDGET - l1Fails;
+  const l2Fails = Math.min(3, remaining);
+  for(let i = 1; i <= l2Fails; i++) {
+    addLog('l2log', `[非流式尝试 ${i}/${l2Fails}] 529 Site Overloaded`, 'log-fail');
+    const used = l1Fails + i;
+    document.getElementById('l2budget').style.width = `${(i/remaining)*100}%`;
+    document.getElementById('l2budgetText').textContent = `${used}/${TOTAL_BUDGET}`;
+    await sleep(400);
+  }
+  addLog('l2log', `连续 ${l2Fails} 次 529，非流式也扛不住，升级到 Layer 3`, 'log-info');
+  setStatus('l2status', '已升级', '#ef4444');
+  await sleep(300);
+  // Layer 3: 模型降级成功
+  const l3 = document.getElementById('layer3');
+  l3.classList.add('layer-active');
+  setStatus('l3status', '执行中', '#ef4444');
+  addLog('l3log', '切换模型: Claude Opus → Claude Sonnet', 'log-info');
+  addLog('l3log', '保留完整对话历史，只改 model 字段', 'log-info');
+  await sleep(500);
+  addLog('l3log', '[Sonnet 响应] 代码分析结果：发现 3 处可优化...', 'log-ok');
+  setStatus('l3status', '成功 ✅', '#22c55e');
+  l3.classList.add('layer-done');
+  document.getElementById('statusText').textContent = '三层降级完成: Layer 3 模型降级成功';
+  running = false;
+}
+function resetAll() {
+  running = false;
+  ['layer1','layer2','layer3'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('layer-active','layer-done');
+  });
+  ['l1log','l2log','l3log'].forEach(id => document.getElementById(id).innerHTML = '');
+  ['l1status','l2status','l3status'].forEach(id => setStatus(id, '待命中', '#333'));
+  document.getElementById('l1budget').style.width = '0%';
+  document.getElementById('l1budgetText').textContent = '0/10';
+  document.getElementById('l2budget').style.width = '0%';
+  document.getElementById('l2budgetText').textContent = '0/4';
+  document.getElementById('statusText').textContent = '点击"触发故障"开始模拟';
+}
+</script>
+</body>
+</html>

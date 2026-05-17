@@ -1,0 +1,31 @@
+flowchart TB
+    subgraph 流式推送
+        S1["content_block_start"]
+        S2["delta片段1"]
+        S3["delta片段2"]
+        S4["delta片段3"]
+        S5["delta片段4"]
+        S6["content_block_stop"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6
+    end
+
+    subgraph 碎片累积
+        B1["拼接中... 不合法"]
+        B2["拼接中... 不合法"]
+        B3["拼接中... 不合法"]
+        B4["完整JSON 合法"]
+    end
+
+    S2 --> B1
+    S3 --> B2
+    S4 --> B3
+    S5 --> B4
+
+    B4 --> PARSE["JSON.parse"]
+    PARSE --> RESULT["得到结构化数据"]
+
+    style S2 fill:#ffc9c9,stroke:#ef4444
+    style S3 fill:#ffc9c9,stroke:#ef4444
+    style S4 fill:#ffc9c9,stroke:#ef4444
+    style S5 fill:#b2f2bb,stroke:#22c55e
+    style RESULT fill:#b2f2bb,stroke:#22c55e

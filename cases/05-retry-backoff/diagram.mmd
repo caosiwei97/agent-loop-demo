@@ -1,0 +1,32 @@
+flowchart LR
+    subgraph 固定间隔["❌ 固定间隔"]
+        direction TB
+        F1["Client A: 1000ms"]
+        F2["Client B: 1000ms"]
+        F3["Client C: 1000ms"]
+        F4["→ 同时重试 = 重试风暴"]
+        F1 --> F4
+        F2 --> F4
+        F3 --> F4
+    end
+
+    subgraph 指数退避["✅ 指数退避 + 抖动"]
+        direction TB
+        E1["Client A: 500ms"]
+        E2["Client B: 1200ms"]
+        E3["Client C: 3800ms"]
+        E4["→ 请求分散，服务器压力均匀"]
+        E1 --> E4
+        E2 --> E4
+        E3 --> E4
+    end
+
+    固定间隔 --- 指数退避
+
+    subgraph 时间线["重试时间线"]
+        direction LR
+        T1["0ms"] --> T2["500ms"] --> T3["1200ms"] --> T4["3800ms"]
+    end
+
+    style 固定间隔 fill:#2d1215,stroke:#ef4444,color:#fca5a5
+    style 指数退避 fill:#0d2818,stroke:#22c55e,color:#86efac

@@ -1,0 +1,21 @@
+flowchart TB
+    OUTPUT["模型输出"] --> CHECK{"finishReason<br/>== 'length'?"}
+
+    CHECK -->|"否 (正常)"| DONE["✅ 正常完成"]
+
+    CHECK -->|"是 (截断)"| STEP1["Step 1: 静默提高上限<br/>8192 → 65536"]
+    STEP1 --> RETRY1["重试"]
+
+    RETRY1 --> CHECK2{"还是截断?"}
+    CHECK2 -->|"否"| DONE
+    CHECK2 -->|"是"| STEP2["Step 2: 注入恢复消息<br/>'不要道歉，不要回顾<br/>从断点继续，拆成更小块'"]
+    STEP2 --> RETRY2["重试 (最多 3 次)"]
+
+    RETRY2 --> CHECK3{"还是截断?"}
+    CHECK3 -->|"否"| DONE
+    CHECK3 -->|"是 (3次后)"| STEP3["Step 3: 认栽<br/>返回不完整结果<br/>标记为截断"]
+
+    style STEP1 fill:#e5dbff,stroke:#8b5cf6
+    style STEP2 fill:#fff3bf,stroke:#f59e0b
+    style STEP3 fill:#ffc9c9,stroke:#ef4444
+    style DONE fill:#b2f2bb,stroke:#22c55e

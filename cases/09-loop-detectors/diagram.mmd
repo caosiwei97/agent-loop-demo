@@ -1,0 +1,26 @@
+flowchart TB
+    CALL["工具调用进入"] --> D1{"通用重复检测<br/>同工具+同参数>10次?"}
+    D1 -->|"是"| W["⚠️ Warning<br/>只告警不阻断"]
+
+    D1 -->|"否"| D2{"无进展轮询检测<br/>同参数+同结果?"}
+    D2 -->|"是"| C1["🚫 Critical<br/>阻断工具"]
+
+    D2 -->|"否"| D3{"Ping-Pong 检测<br/>A→B→A→B 且无变化?"}
+    D3 -->|"是"| C2["🚫 Critical<br/>阻断交替工具"]
+
+    D3 -->|"否"| D4{"全局熔断器<br/>累计无进展>30次?"}
+    D4 -->|"是"| B["⛔ Break<br/>全局熔断，强制停止"]
+    D4 -->|"否"| OK["✅ 正常执行"]
+
+    subgraph 三级响应
+        W
+        C1
+        C2
+        B
+    end
+
+    style W fill:#fff3bf,stroke:#f59e0b
+    style C1 fill:#ffc9c9,stroke:#ef4444
+    style C2 fill:#ffc9c9,stroke:#ef4444
+    style B fill:#8b0000,stroke:#ff0000,color:#fff
+    style OK fill:#b2f2bb,stroke:#22c55e

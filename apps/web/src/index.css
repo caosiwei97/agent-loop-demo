@@ -1,0 +1,180 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+/* Markdown content styles */
+.markdown-body { padding: 24px 32px; color: #ccc; font-size: 14px; line-height: 1.8; }
+.markdown-body h1 { font-size: 20px; color: #fff; margin: 16px 0 8px; }
+.markdown-body h2 { font-size: 17px; color: #ddd; margin: 14px 0 6px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+.markdown-body h3 { font-size: 15px; color: #ccc; margin: 12px 0 4px; }
+.markdown-body p { margin: 8px 0; }
+.markdown-body code { background: #333; padding: 1px 5px; border-radius: 3px; font-size: 13px; color: #4ec9b0; }
+.markdown-body pre { background: #1a1a1a; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 8px 0; }
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body ul, .markdown-body ol { padding-left: 20px; margin: 8px 0; }
+.markdown-body li { margin: 4px 0; }
+.markdown-body strong { color: #fff; }
+.markdown-body a { color: #4ec9b0; }
+
+/* Console line colors */
+.console-stdout { color: #6a9955; }
+.console-stderr { color: #f44747; }
+.console-info { color: #888; font-style: italic; }
+.console-exit-ok { color: #dcdcaa; }
+.console-exit-err { color: #f44747; font-weight: 500; }
+
+/* ========================================
+   antd Tree dark theme overrides
+   ======================================== */
+
+.ant-tree .ant-tree-node-content-wrapper {
+  background: transparent !important;
+  border-radius: 3px;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ant-tree .ant-tree-node-content-wrapper:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #ddd;
+}
+
+.ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: rgba(78, 201, 176, 0.08) !important;
+  color: #fff !important;
+  border-left: 2px solid #4ec9b0;
+  padding-left: 4px;
+}
+
+/* Switcher arrow styling */
+.ant-tree-switcher {
+  color: #555 !important;
+  transition: color 0.15s ease;
+}
+.ant-tree-switcher:hover {
+  color: #888 !important;
+}
+
+/* Tree indent guides — subtle lines */
+.ant-tree-indent-unit {
+  width: 20px !important;
+}
+
+.ant-tree.ant-tree-show-line .ant-tree-indent-unit::before {
+  display: none !important;
+}
+
+.ant-tree .ant-tree-treenode {
+  padding: 1px 0 !important;
+  transition: background 0.15s ease;
+}
+
+.ant-tree .ant-tree-treenode:hover {
+  background: transparent;
+}
+
+.ant-tree .ant-tree-iconEle {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 14px;
+}
+
+/* ========================================
+   antd Tabs VS Code-style overrides
+   ======================================== */
+.ant-tabs-tab {
+  padding: 6px 16px !important;
+  border-bottom: 2px solid transparent !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.ant-tabs-tab:hover {
+  color: #ccc !important;
+}
+
+.ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #fff !important;
+}
+
+.ant-tabs-tab.ant-tabs-tab-active {
+  border-bottom: 2px solid #4ec9b0 !important;
+}
+
+.ant-tabs-ink-bar {
+  display: none !important;
+}
+
+.ant-tabs-nav::before {
+  border-bottom: 1px solid #333 !important;
+}
+
+/* ========================================
+   Interactive cursor
+   ======================================== */
+.ant-tree-treenode,
+.ant-tabs-tab,
+.ant-btn {
+  cursor: pointer !important;
+}
+
+/* ========================================
+   Scrollbar styling
+   ======================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a;
+}
+
+/* ========================================
+   Pulse animation for running indicator
+   ======================================== */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ========================================
+   Mindmap text visibility overrides
+   ======================================== */
+.markmap {
+  --markmap-text-color: #e8e8e8 !important;
+  --markmap-code-color: #bbb !important;
+  --markmap-code-bg: #333 !important;
+  --markmap-circle-open-bg: #444 !important;
+  --markmap-highlight-bg: rgba(255, 200, 50, 0.15) !important;
+  --markmap-a-color: #4fc3f7 !important;
+  --markmap-a-hover-color: #81d4fa !important;
+  --markmap-font: 400 16px/22px sans-serif !important;
+  color: #e8e8e8 !important;
+}
+.markmap-foreign body,
+.markmap-foreign div,
+.markmap-foreign p,
+.markmap-foreign span {
+  color: #e8e8e8 !important;
+  font-weight: 400 !important;
+}
+.markmap-link {
+  stroke: #667 !important;
+  stroke-width: 1.5 !important;
+}
+.markmap-node-circle {
+  fill: #444 !important;
+  stroke: #4fc3f7 !important;
+}

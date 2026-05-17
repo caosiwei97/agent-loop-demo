@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>循环检测器模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:12px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#0e639c;color:#fff;border:none;padding:8px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+button.active{background:#8b5cf6}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;font-size:13px}
+.panel-title{color:#569cd6;font-size:12px;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:4px}
+.call-entry{padding:4px 8px;margin:3px 0;border-radius:3px;border-left:3px solid #333;animation:fadeIn .2s}
+.call-normal{border-left-color:#22c55e;background:rgba(34,197,94,0.06)}
+.call-warn{border-left-color:#f59e0b;background:rgba(245,158,11,0.1)}
+.call-critical{border-left-color:#ef4444;background:rgba(239,68,68,0.1)}
+.call-break{border-left-color:#ff0000;background:rgba(255,0,0,0.15)}
+.call-num{color:#858585;font-size:11px}
+.call-tool{color:#569cd6}
+.call-result{color:#858585;font-size:11px}
+.detector-box{margin-top:8px;padding:10px;border-radius:6px;border:2px solid transparent;transition:all .5s;opacity:0.3}
+.detector-box.active{opacity:1}
+.det-name{font-weight:bold;font-size:13px}
+.det-desc{font-size:11px;color:#858585;margin-top:2px}
+.det-count{font-size:20px;font-weight:bold;margin-top:4px}
+.det-level{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;margin-top:4px}
+.level-normal{background:#333;color:#858585}
+.level-warning{background:#f59e0b33;color:#f59e0b;border:1px solid #f59e0b}
+.level-critical{background:#ef444433;color:#ef4444;border:1px solid #ef4444}
+.level-break{background:#ff000033;color:#ff0000;border:1px solid #ff0000}
+#det-generic{border-color:#569cd6}
+#det-generic .det-name{color:#569cd6}
+#det-noprogress{border-color:#f59e0b}
+#det-noprogress .det-name{color:#f59e0b}
+#det-pingpong{border-color:#c586c0}
+#det-pingpong .det-name{color:#c586c0}
+#det-global{border-color:#ef4444}
+#det-global .det-name{color:#ef4444}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h2>循环检测器模拟器</h2>
+    <div class="controls">
+      <button id="btnNormal" class="active" onclick="setPattern('normal')">正常调用</button>
+      <button id="btnRepeat" onclick="setPattern('repeat')">重复调用</button>
+      <button id="btnNoProgress" onclick="setPattern('noprogress')">无进展轮询</button>
+      <button id="btnPingPong" onclick="setPattern('pingpong')">Ping-Pong</button>
+      <button onclick="resetAll()">重置</button>
+      <span id="statusText" class="status">选择模式后自动运行</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel">
+      <div class="panel-title">📋 工具调用日志</div>
+      <div id="callLog"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">🔍 检测器状态</div>
+      <div class="detector-box active" id="det-generic">
+        <div class="det-name">通用重复检测</div>
+        <div class="det-desc">同工具+同参数反复调用，只告警不阻断</div>
+        <div class="det-count" id="det-generic-count">0</div>
+        <span class="det-level level-normal" id="det-generic-level">正常</span>
+      </div>
+      <div class="detector-box" id="det-noprogress">
+        <div class="det-name">无进展轮询检测</div>
+        <div class="det-desc">同参数+同结果=没有新信息</div>
+        <div class="det-count" id="det-noprogress-count">0</div>
+        <span class="det-level level-normal" id="det-noprogress-level">正常</span>
+      </div>
+      <div class="detector-box" id="det-pingpong">
+        <div class="det-name">Ping-Pong 检测</div>
+        <div class="det-desc">A→B→A→B 交替且双方无变化</div>
+        <div class="det-count" id="det-pingpong-count">0</div>
+        <span class="det-level level-normal" id="det-pingpong-level">正常</span>
+      </div>
+      <div class="detector-box" id="det-global">
+        <div class="det-name">全局熔断器</div>
+        <div class="det-desc">累计无进展≥30次，强制停止</div>
+        <div class="det-count" id="det-global-count">0</div>
+        <span class="det-level level-normal" id="det-global-level">正常</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+let pattern = 'normal', timer = null, callNum = 0;
+const W=5, C=8, B=10; // thresholds
+function setPattern(p) {
+  pattern = p;
+  resetAll();
+  ['btnNormal','btnRepeat','btnNoProgress','btnPingPong'].forEach(id => document.getElementById(id).classList.remove('active'));
+  const map = {normal:'btnNormal',repeat:'btnRepeat',noprogress:'btnNoProgress',pingpong:'btnPingPong'};
+  document.getElementById(map[p]).classList.add('active');
+  runPattern();
+}
+function addCall(tool, params, result, cls) {
+  callNum++;
+  const div = document.createElement('div');
+  div.className = `call-entry ${cls}`;
+  div.innerHTML = `<span class="call-num">#${callNum}</span> <span class="call-tool">${tool}(${params})</span> → <span class="call-result">${result}</span>`;
+  document.getElementById('callLog').appendChild(div);
+  div.scrollIntoView({behavior:'smooth'});
+}
+function updateDetector(id, count, level) {
+  document.getElementById(`${id}-count`).textContent = count;
+  const levelEl = document.getElementById(`${id}-level`);
+  const box = document.getElementById(id);
+  box.classList.add('active');
+  if(level >= B) {
+    levelEl.className = 'det-level level-break';
+    levelEl.textContent = '⛔ Break';
+  } else if(level >= C) {
+    levelEl.className = 'det-level level-critical';
+    levelEl.textContent = '🚫 Critical';
+  } else if(level >= W) {
+    levelEl.className = 'det-level level-warning';
+    levelEl.textContent = '⚠️ Warning';
+  } else {
+    levelEl.className = 'det-level level-normal';
+    levelEl.textContent = '正常';
+  }
+}
+function getCallCls(level) {
+  if(level >= B) return 'call-break';
+  if(level >= C) return 'call-critical';
+  if(level >= W) return 'call-warn';
+  return 'call-normal';
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function runPattern() {
+  if(pattern === 'normal') {
+    document.getElementById('statusText').textContent = '正常调用模式: 不同工具交替执行';
+    const calls = [
+      ['read_file','{path:"a.ts"}','文件内容A'],
+      ['grep_files','{pattern:"import"}','3 matches'],
+      ['read_file','{path:"b.ts"}','文件内容B'],
+      ['write_file','{path:"a.ts"}','写入成功'],
+      ['read_file','{path:"c.ts"}','文件内容C'],
+      ['grep_files','{pattern:"export"}','5 matches'],
+    ];
+    for(const [t,p,r] of calls) {
+      addCall(t,p,r,'call-normal');
+      await sleep(400);
+    }
+    document.getElementById('statusText').textContent = '正常调用: 无重复，所有检测器正常';
+  } else if(pattern === 'repeat') {
+    document.getElementById('statusText').textContent = '重复调用模式: 同一工具+同一参数反复调用';
+    for(let i = 1; i <= B; i++) {
+      const level = i;
+      addCall('read_file','{path:"index.ts"}','文件内容', getCallCls(level));
+      updateDetector('det-generic', i, level);
+      await sleep(350);
+    }
+    document.getElementById('statusText').textContent = '通用重复检测: 10 次相同调用 → Warning → Critical → Break';
+  } else if(pattern === 'noprogress') {
+    document.getElementById('statusText').textContent = '无进展轮询模式: 同参数+同结果';
+    let streak = 0;
+    for(let i = 1; i <= B; i++) {
+      streak++;
+      const level = streak;
+      addCall('check_status','{id:"deploy-1"}','pending', getCallCls(level));
+      updateDetector('det-noprogress', streak, level);
+      updateDetector('det-global', streak, streak);
+      await sleep(350);
+    }
+    document.getElementById('statusText').textContent = '无进展轮询: 连续 10 次结果相同 → 触发全局熔断';
+  } else if(pattern === 'pingpong') {
+    document.getElementById('statusText').textContent = 'Ping-Pong 模式: 读写交替但无变化';
+    let count = 0;
+    for(let i = 1; i <= 5; i++) {
+      count += 2;
+      addCall('read_file','{path:"config.json"}','{port:3000}', getCallCls(count));
+      await sleep(250);
+      addCall('write_file','{path:"config.json"}','写入成功', getCallCls(count));
+      updateDetector('det-pingpong', count, count);
+      updateDetector('det-global', count, count);
+      await sleep(250);
+    }
+    document.getElementById('statusText').textContent = 'Ping-Pong: 读写交替 10 次，两边结果都没变化 → Break';
+  }
+}
+function resetAll() {
+  if(timer) { clearInterval(timer); timer = null; }
+  callNum = 0;
+  document.getElementById('callLog').innerHTML = '';
+  ['det-generic','det-noprogress','det-pingpong','det-global'].forEach(id => {
+    document.getElementById(`${id}-count`).textContent = '0';
+    const l = document.getElementById(`${id}-level`);
+    l.className = 'det-level level-normal';
+    l.textContent = '正常';
+    document.getElementById(id).classList.remove('active');
+  });
+  document.getElementById('det-generic').classList.add('active');
+  document.getElementById('statusText').textContent = '选择模式后自动运行';
+}
+</script>
+</body>
+</html>

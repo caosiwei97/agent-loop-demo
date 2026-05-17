@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant Client as 客户端
+    participant Server as 服务端
+    participant API as LLM API
+
+    Note over Client,API: SSE 流式请求
+    Client->>Server: HTTP GET (SSE)
+    Server->>API: 发起流式请求
+    API-->>Server: event: message_start
+    Server-->>Client: event: message_start
+
+    Note over API,Client: Token 逐个推送
+    API-->>Server: event: content_block_delta {"text":"你"}
+    Server-->>Client: data: {"delta":{"text":"你"}}
+    API-->>Server: event: content_block_delta {"text":"好"}
+    Server-->>Client: data: {"delta":{"text":"好"}}
+    API-->>Server: event: content_block_delta {"text":"，"}
+    Server-->>Client: data: {"delta":{"text":"，"}}
+
+    Note over API,Client: 结束
+    API-->>Server: event: message_stop
+    Server-->>Client: data: [DONE]
+
+    Note over Client: 拼接所有 text-delta = "你好，"
