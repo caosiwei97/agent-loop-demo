@@ -30,14 +30,15 @@ function fixedDelay(attempt) { return 1000; }
 
 // 指数退避（好）
 function exponentialBackoff(attempt) {
-  return Math.min(1000 * Math.pow(2, attempt), 30000);
+  return Math.min(500 * Math.pow(2, attempt), 30000);
 }
 
-// 指数退避 + 随机抖动（最好）
+// 指数退避 + 随机抖动（最好）— Claude Code 的做法
 function getRetryDelay(attempt) {
-  const exponentialDelay = 1000 * Math.pow(2, attempt);
-  const jitter = Math.random() * exponentialDelay * 0.25;
-  return Math.min(exponentialDelay + jitter, 30000);
+  const base = 500;
+  const delay = base * Math.pow(2, attempt);
+  const jitter = Math.random() * delay * 0.25;
+  return Math.min(delay + jitter, 30000);
 }
 ```
 

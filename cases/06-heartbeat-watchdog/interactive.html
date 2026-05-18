@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSE 心跳 + 超时检测</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+button.active{background:#8b5cf6}
+button.active:hover{background:#7c3aed}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;display:flex;flex-direction:column;overflow:hidden}
+.panel-title{color:#569cd6;font-size:11px;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.sliders{display:flex;gap:16px;font-size:11px;color:#858585;padding:8px 0;border-top:1px solid #333}
+.slider-group{display:flex;align-items:center;gap:6px}
+.slider-group label{white-space:nowrap}
+.slider-group input[type=range]{width:100px;accent-color:#569cd6}
+.slider-val{color:#dcdcaa;min-width:40px}
+svg{flex:1;width:100%}
+.timeline-label{fill:#858585;font-size:10px}
+.event-log{flex:1;overflow-y:auto;font-size:11px}
+.log-entry{padding:3px 6px;margin:2px 0;border-radius:2px;animation:fadeIn .3s}
+.log-data{background:#1a2a3c;color:#a5d8ff}
+.log-heartbeat{background:#1a3c1a;color:#b2f2bb}
+.log-timeout{background:#3c1a1a;color:#ffc9c9}
+.log-recovery{background:#2a2a1a;color:#ffd8a8}
+.log-info{background:#252526;color:#cccccc}
+.timeout-bar{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #333;border-radius:4px;margin-top:8px}
+.timeout-fill{flex:1;height:12px;background:#333;border-radius:6px;overflow:hidden}
+.timeout-inner{height:100%;border-radius:6px;transition:width .1s,background .3s}
+.timeout-text{font-size:11px;color:#858585;min-width:80px;text-align:right}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>SSE 心跳 + 超时检测 — 实时模拟</h2>
+  <div class="controls">
+    <button class="active" id="btnNormal" onclick="startScenario('normal')">正常运行</button>
+    <button id="btnSilent" onclick="startScenario('silent')">沉默故障</button>
+    <button id="btnRecovery" onclick="startScenario('recovery')">恢复对账</button>
+    <button onclick="stopAll()">停止</button>
+    <span class="status" id="statusText">选择场景开始模拟</span>
+  </div>
+  <div class="sliders">
+    <div class="slider-group">
+      <label>心跳间隔:</label>
+      <input type="range" id="sliderHB" min="500" max="3000" value="1500" step="100" oninput="updateSliders()">
+      <span class="slider-val" id="valHB">1500ms</span>
+    </div>
+    <div class="slider-group">
+      <label>超时阈值:</label>
+      <input type="range" id="sliderTO" min="1000" max="6000" value="3000" step="200" oninput="updateSliders()">
+      <span class="slider-val" id="valTO">3000ms</span>
+    </div>
+    <div class="slider-group">
+      <label>数据间隔:</label>
+      <input type="range" id="sliderData" min="200" max="2000" value="800" step="100" oninput="updateSliders()">
+      <span class="slider-val" id="valData">800ms</span>
+    </div>
+  </div>
+  <div class="main">
+    <div class="panel" style="flex:1.5">
+      <div class="panel-title">时间轴 — 服务端推送</div>
+      <svg id="timeline"></svg>
+    </div>
+    <div class="panel">
+      <div class="panel-title">客户端状态</div>
+      <div class="timeout-bar">
+        <span style="font-size:11px;color:#858585">超时进度:</span>
+        <div class="timeout-fill"><div class="timeout-inner" id="timeoutBar" style="width:0%;background:#22c55e"></div></div>
+        <span class="timeout-text" id="timeoutText">0ms / 3000ms</span>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#858585">
+        <div>lastDataAt: <span id="lastDataAt" style="color:#dcdcaa">-</span></div>
+        <div>连接状态: <span id="connStatus" style="color:#22c55e">活跃</span></div>
+      </div>
+      <div class="panel-title" style="margin-top:12px">事件日志</div>
+      <div class="event-log" id="eventLog"></div>
+    </div>
+  </div>
+</div>
+<script>
+let heartbeatInterval = 1500, timeoutThreshold = 3000, dataInterval = 800;
+let running = false, timers = [], startTime = 0, lastData = 0;
+let events = [];
+const maxEvents = 60;
+const svgEl = document.getElementById('timeline');
+
+function updateSliders() {
+  heartbeatInterval = +document.getElementById('sliderHB').value;
+  timeoutThreshold = +document.getElementById('sliderTO').value;
+  dataInterval = +document.getElementById('sliderData').value;
+  document.getElementById('valHB').textContent = heartbeatInterval + 'ms';
+  document.getElementById('valTO').textContent = timeoutThreshold + 'ms';
+  document.getElementById('valData').textContent = dataInterval + 'ms';
+}
+
+function addLog(text, cls) {
+  const log = document.getElementById('eventLog');
+  const el = document.createElement('div');
+  el.className = `log-entry ${cls}`;
+  el.textContent = `[${((Date.now() - startTime) / 1000).toFixed(1)}s] ${text}`;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+function stopAll() {
+  running = false;
+  timers.forEach(t => clearInterval(t));
+  timers.forEach(t => clearTimeout(t));
+  timers = [];
+  document.getElementById('statusText').textContent = '已停止';
+  document.getElementById('connStatus').textContent = '已断开';
+  document.getElementById('connStatus').style.color = '#858585';
+}
+
+function setActiveBtn(id) {
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(id);
+  if (btn) btn.classList.add('active');
+}
+
+function startScenario(type) {
+  stopAll();
+  events = [];
+  document.getElementById('eventLog').innerHTML = '';
+  running = true;
+  startTime = Date.now();
+  lastData = Date.now();
+  document.getElementById('connStatus').textContent = '活跃';
+  document.getElementById('connStatus').style.color = '#22c55e';
+
+  if (type === 'normal') {
+    setActiveBtn('btnNormal');
+    document.getElementById('statusText').textContent = '正常运行: 心跳+数据持续推送';
+    addLog('连接建立，开始接收数据', 'log-info');
+    startNormal();
+  } else if (type === 'silent') {
+    setActiveBtn('btnSilent');
+    document.getElementById('statusText').textContent = '沉默故障: 2s后停止推送，观察超时检测';
+    addLog('连接建立', 'log-info');
+    startSilent();
+  } else if (type === 'recovery') {
+    setActiveBtn('btnRecovery');
+    document.getElementById('statusText').textContent = '恢复对账: 断开后重连并验证数据';
+    addLog('连接建立', 'log-info');
+    startRecovery();
+  }
+
+  const checkTimer = setInterval(() => {
+    if (!running) { clearInterval(checkTimer); return; }
+    updateTimeoutDisplay();
+    renderTimeline();
+  }, 50);
+  timers.push(checkTimer);
+}
+
+function feedData(type, label) {
+  lastData = Date.now();
+  events.push({ time: Date.now() - startTime, type, label });
+  if (events.length > maxEvents) events.shift();
+  document.getElementById('lastDataAt').textContent = new Date(lastData).toLocaleTimeString();
+}
+
+function updateTimeoutDisplay() {
+  const elapsed = Date.now() - lastData;
+  const pct = Math.min(elapsed / timeoutThreshold * 100, 100);
+  const bar = document.getElementById('timeoutBar');
+  bar.style.width = pct + '%';
+  bar.style.background = pct < 50 ? '#22c55e' : pct < 80 ? '#f59e0b' : '#ef4444';
+  document.getElementById('timeoutText').textContent = `${Math.round(elapsed)}ms / ${timeoutThreshold}ms`;
+
+  if (elapsed >= timeoutThreshold && running) {
+    document.getElementById('connStatus').textContent = '超时!';
+    document.getElementById('connStatus').style.color = '#ef4444';
+  }
+}
+
+function startNormal() {
+  const dTimer = setInterval(() => {
+    if (!running) return;
+    feedData('data', 'token');
+    addLog('收到数据: text_delta', 'log-data');
+  }, dataInterval);
+  timers.push(dTimer);
+
+  const hTimer = setInterval(() => {
+    if (!running) return;
+    feedData('heartbeat', '♥');
+    addLog(': heartbeat (SSE注释帧)', 'log-heartbeat');
+  }, heartbeatInterval);
+  timers.push(hTimer);
+}
+
+function startSilent() {
+  const dTimer = setInterval(() => {
+    if (!running) return;
+    feedData('data', 'token');
+    addLog('收到数据: text_delta', 'log-data');
+  }, dataInterval);
+  timers.push(dTimer);
+
+  const hTimer = setInterval(() => {
+    if (!running) return;
+    feedData('heartbeat', '♥');
+    addLog(': heartbeat', 'log-heartbeat');
+  }, heartbeatInterval);
+  timers.push(hTimer);
+
+  const stopTimer = setTimeout(() => {
+    clearInterval(dTimer);
+    clearInterval(hTimer);
+    addLog('*** 服务端停止推送 (网络抖动/进程挂起) ***', 'log-timeout');
+    events.push({ time: Date.now() - startTime, type: 'stop', label: '停止' });
+
+    const detectTimer = setTimeout(() => {
+      if (!running) return;
+      addLog(`超时检测触发! ${timeoutThreshold}ms 未收到任何数据`, 'log-timeout');
+      addLog('判定: 连接失效 (TCP半开状态)', 'log-timeout');
+      document.getElementById('statusText').textContent = '沉默故障已检测到!';
+    }, timeoutThreshold);
+    timers.push(detectTimer);
+  }, 2000);
+  timers.push(stopTimer);
+}
+
+function startRecovery() {
+  let dataCount = 0;
+  const dTimer = setInterval(() => {
+    if (!running) return;
+    dataCount++;
+    feedData('data', `t${dataCount}`);
+    addLog(`收到数据 #${dataCount}`, 'log-data');
+  }, dataInterval);
+  timers.push(dTimer);
+
+  const hTimer = setInterval(() => {
+    if (!running) return;
+    feedData('heartbeat', '♥');
+  }, heartbeatInterval);
+  timers.push(hTimer);
+
+  const stopTimer = setTimeout(() => {
+    clearInterval(dTimer);
+    clearInterval(hTimer);
+    addLog('*** 连接中断 ***', 'log-timeout');
+    events.push({ time: Date.now() - startTime, type: 'stop', label: '中断' });
+
+    const detectTimer = setTimeout(() => {
+      if (!running) return;
+      addLog(`超时检测: ${timeoutThreshold}ms 无数据`, 'log-timeout');
+      addLog(`对账: 已收到 ${dataCount} 个数据块`, 'log-recovery');
+      addLog('等待 2s 后向服务端确认...', 'log-recovery');
+
+      const recoveryTimer = setTimeout(() => {
+        if (!running) return;
+        addLog('对账完成: 服务端确认全部处理完毕', 'log-recovery');
+        addLog('结论: 用服务端持久化数据覆盖前端状态', 'log-recovery');
+        events.push({ time: Date.now() - startTime, type: 'recovery', label: '恢复' });
+        feedData('recovery', '✓');
+        document.getElementById('connStatus').textContent = '已恢复';
+        document.getElementById('connStatus').style.color = '#f59e0b';
+        document.getElementById('statusText').textContent = '对账恢复完成';
+      }, 2000);
+      timers.push(recoveryTimer);
+    }, timeoutThreshold);
+    timers.push(detectTimer);
+  }, 2500);
+  timers.push(stopTimer);
+}
+
+function renderTimeline() {
+  const rect = svgEl.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (w <= 0 || h <= 0) return;
+
+  const svg = d3.select('#timeline');
+  svg.selectAll('*').remove();
+
+  const margin = { top: 20, right: 20, bottom: 30, left: 50 };
+  const iw = w - margin.left - margin.right;
+  const ih = h - margin.top - margin.bottom;
+
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  if (events.length === 0) {
+    g.append('text').attr('x', iw / 2).attr('y', ih / 2).attr('text-anchor', 'middle').attr('fill', '#555').attr('font-size', 12).text('等待事件...');
+    return;
+  }
+
+  const maxTime = Math.max(d3.max(events, d => d.time), 3000);
+  const x = d3.scaleLinear().domain([0, maxTime]).range([0, iw]);
+  const yBand = ih / 3;
+
+  g.append('line').attr('x1', 0).attr('x2', iw).attr('y1', yBand).attr('y2', yBand).attr('stroke', '#333').attr('stroke-dasharray', '3,3');
+  g.append('line').attr('x1', 0).attr('x2', iw).attr('y1', yBand * 2).attr('y2', yBand * 2).attr('stroke', '#333').attr('stroke-dasharray', '3,3');
+
+  g.append('text').attr('x', -5).attr('y', yBand * 0.5).attr('text-anchor', 'end').attr('fill', '#858585').attr('font-size', 9).text('数据');
+  g.append('text').attr('x', -5).attr('y', yBand * 1.5).attr('text-anchor', 'end').attr('fill', '#858585').attr('font-size', 9).text('心跳');
+  g.append('text').attr('x', -5).attr('y', yBand * 2.5).attr('text-anchor', 'end').attr('fill', '#858585').attr('font-size', 9).text('事件');
+
+  const xAxis = d3.axisBottom(x).ticks(6).tickFormat(d => (d / 1000).toFixed(1) + 's');
+  g.append('g').attr('transform', `translate(0,${ih})`).call(xAxis).selectAll('text').attr('fill', '#858585').attr('font-size', 9);
+  g.selectAll('.domain,.tick line').attr('stroke', '#444');
+
+  events.forEach(ev => {
+    const cx = x(ev.time);
+    if (ev.type === 'data') {
+      g.append('rect').attr('x', cx - 3).attr('y', yBand * 0.5 - 4).attr('width', 6).attr('height', 8).attr('rx', 2).attr('fill', '#4a9eed').attr('opacity', 0.8);
+    } else if (ev.type === 'heartbeat') {
+      g.append('circle').attr('cx', cx).attr('cy', yBand * 1.5).attr('r', 4).attr('fill', '#22c55e').attr('opacity', 0.7);
+    } else if (ev.type === 'stop') {
+      g.append('line').attr('x1', cx).attr('x2', cx).attr('y1', 0).attr('y2', ih).attr('stroke', '#ef4444').attr('stroke-width', 2).attr('stroke-dasharray', '4,2');
+      g.append('text').attr('x', cx + 4).attr('y', 12).attr('fill', '#ef4444').attr('font-size', 9).text('停止');
+    } else if (ev.type === 'recovery') {
+      g.append('line').attr('x1', cx).attr('x2', cx).attr('y1', 0).attr('y2', ih).attr('stroke', '#f59e0b').attr('stroke-width', 2).attr('stroke-dasharray', '4,2');
+      g.append('text').attr('x', cx + 4).attr('y', 12).attr('fill', '#f59e0b').attr('font-size', 9).text('恢复');
+    }
+  });
+
+  const elapsed = Date.now() - lastData;
+  const timeoutPct = Math.min(elapsed / timeoutThreshold, 1);
+  if (timeoutPct > 0.3 && events.length > 0) {
+    const lastEv = events[events.length - 1];
+    const lx = x(lastEv.time);
+    const rw = Math.min(x(lastEv.time + elapsed) - lx, iw - lx);
+    if (rw > 0) {
+      g.append('rect').attr('x', lx).attr('y', yBand * 2.2).attr('width', rw).attr('height', yBand * 0.6).attr('rx', 3).attr('fill', timeoutPct > 0.8 ? '#ef444433' : '#f59e0b22').attr('stroke', timeoutPct > 0.8 ? '#ef4444' : '#f59e0b').attr('stroke-width', 1);
+      g.append('text').attr('x', lx + rw / 2).attr('y', yBand * 2.5 + 4).attr('text-anchor', 'middle').attr('fill', timeoutPct > 0.8 ? '#ef4444' : '#f59e0b').attr('font-size', 9).text(`${Math.round(elapsed)}ms`);
+    }
+  }
+}
+
+updateSliders();
+</script>
+</body>
+</html>

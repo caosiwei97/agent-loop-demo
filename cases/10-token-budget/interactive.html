@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token 预算控制模拟器</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.config{display:flex;gap:12px;font-size:11px;color:#858585;align-items:center;flex-wrap:wrap}
+.config label{display:flex;align-items:center;gap:4px}
+.config input{background:#252526;color:#dcdcaa;border:1px solid #444;border-radius:3px;padding:3px 6px;width:70px;font-family:inherit;font-size:11px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.left{flex:1;display:flex;flex-direction:column;gap:10px}
+.right{flex:1.2;display:flex;flex-direction:column;gap:10px}
+.panel{border:1px solid #333;border-radius:6px;padding:12px;overflow:hidden;display:flex;flex-direction:column}
+.panel-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.gauge-container{flex:1;display:flex;align-items:center;justify-content:center}
+svg.gauge{max-width:100%;max-height:100%}
+.log-area{flex:1;overflow-y:auto;font-size:11px}
+.log-entry{padding:4px 8px;margin:2px 0;border-radius:2px;animation:fadeIn .3s}
+.log-turn{background:#1a2a3c;color:#a5d8ff;border-left:2px solid #4a9eed}
+.log-nudge{background:#2a2a1a;color:#ffd8a8;border-left:2px solid #f59e0b}
+.log-diminish{background:#3c1a1a;color:#ffc9c9;border-left:2px solid #ef4444}
+.log-ok{background:#1a3c1a;color:#b2f2bb;border-left:2px solid #22c55e}
+.cost-display{font-size:12px;padding:8px;border:1px solid #333;border-radius:4px;background:#252526}
+.cost-row{display:flex;justify-content:space-between;padding:2px 0}
+.cost-val{color:#dcdcaa}
+.cost-warn{color:#f59e0b}
+.cost-danger{color:#ef4444}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Token 预算控制模拟器</h2>
+  <div class="controls">
+    <button onclick="runNormal()">正常任务</button>
+    <button onclick="runRunaway()">失控场景</button>
+    <button onclick="runDiminishing()">递减回报</button>
+    <button onclick="resetAll()">重置</button>
+    <span class="status" id="statusText">选择场景模拟 Token 消耗</span>
+  </div>
+  <div class="config">
+    <label>TOKEN_BUDGET: <input id="cfgBudget" type="number" value="15000"></label>
+    <label>递减阈值: <input id="cfgThreshold" type="number" value="500"></label>
+    <label>lowStreak限制: <input id="cfgStreak" type="number" value="2"></label>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="panel" style="flex:0 0 auto;min-height:200px">
+        <div class="panel-title">Token 预算仪表盘</div>
+        <div class="gauge-container">
+          <svg id="gauge" class="gauge" viewBox="0 0 300 180"></svg>
+        </div>
+      </div>
+      <div class="panel" style="flex:1">
+        <div class="panel-title">每轮输出趋势</div>
+        <svg id="chart" style="width:100%;height:100%;flex:1;min-height:120px"></svg>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel" style="flex:1">
+        <div class="panel-title">执行日志</div>
+        <div class="log-area" id="logArea"></div>
+      </div>
+      <div class="panel" style="flex:0 0 auto">
+        <div class="panel-title">费用估算</div>
+        <div class="cost-display" id="costDisplay">
+          <div class="cost-row"><span>累计输出 Token:</span><span class="cost-val" id="costOutput">0</span></div>
+          <div class="cost-row"><span>估算输入 Token (15x):</span><span class="cost-val" id="costInput">0</span></div>
+          <div class="cost-row"><span>输出费用 ($15/M):</span><span class="cost-val" id="costOutFee">$0.00</span></div>
+          <div class="cost-row"><span>输入费用 ($3/M):</span><span class="cost-val" id="costInFee">$0.00</span></div>
+          <div class="cost-row" style="border-top:1px solid #333;padding-top:4px;margin-top:4px"><span><b>总费用:</b></span><span class="cost-val" id="costTotal">$0.00</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+let running = false;
+let turnData = [];
+let totalOutput = 0;
+
+function addLog(text, cls) {
+  const el = document.createElement('div');
+  el.className = `log-entry ${cls}`;
+  el.textContent = text;
+  document.getElementById('logArea').appendChild(el);
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+function getBudget() { return +document.getElementById('cfgBudget').value || 15000; }
+function getThreshold() { return +document.getElementById('cfgThreshold').value || 500; }
+function getStreakLimit() { return +document.getElementById('cfgStreak').value || 2; }
+
+function updateGauge(used, budget) {
+  const pct = Math.min(used / budget, 1);
+  const svg = d3.select('#gauge');
+  svg.selectAll('*').remove();
+
+  const cx = 150, cy = 140, r = 100;
+  const startAngle = -Math.PI * 0.75;
+  const endAngle = Math.PI * 0.75;
+  const totalAngle = endAngle - startAngle;
+
+  const arc = d3.arc().innerRadius(r - 16).outerRadius(r).startAngle(startAngle).endAngle(endAngle);
+  svg.append('path').attr('d', arc()).attr('transform', `translate(${cx},${cy})`).attr('fill', '#333');
+
+  const color = pct < 0.7 ? '#22c55e' : pct < 0.9 ? '#f59e0b' : '#ef4444';
+  const valueArc = d3.arc().innerRadius(r - 16).outerRadius(r).startAngle(startAngle).endAngle(startAngle + totalAngle * pct);
+  svg.append('path').attr('d', valueArc()).attr('transform', `translate(${cx},${cy})`).attr('fill', color);
+
+  svg.append('text').attr('x', cx).attr('y', cy - 10).attr('text-anchor', 'middle').attr('fill', color).attr('font-size', 24).attr('font-weight', 'bold').text(Math.round(pct * 100) + '%');
+  svg.append('text').attr('x', cx).attr('y', cy + 12).attr('text-anchor', 'middle').attr('fill', '#858585').attr('font-size', 11).text(`${used.toLocaleString()} / ${budget.toLocaleString()}`);
+
+  if (pct >= 0.9) {
+    svg.append('text').attr('x', cx).attr('y', cy + 30).attr('text-anchor', 'middle').attr('fill', '#f59e0b').attr('font-size', 10).text('⚠ 90% nudge 触发');
+  }
+
+  const ticks = [0, 0.25, 0.5, 0.75, 0.9, 1];
+  ticks.forEach(t => {
+    const a = startAngle + totalAngle * t;
+    const x1 = cx + (r + 4) * Math.cos(a - Math.PI/2);
+    const y1 = cy + (r + 4) * Math.sin(a - Math.PI/2);
+    const x2 = cx + (r + 10) * Math.cos(a - Math.PI/2);
+    const y2 = cy + (r + 10) * Math.sin(a - Math.PI/2);
+    svg.append('line').attr('x1',x1).attr('y1',y1).attr('x2',x2).attr('y2',y2).attr('stroke','#555').attr('stroke-width',1);
+    const tx = cx + (r + 18) * Math.cos(a - Math.PI/2);
+    const ty = cy + (r + 18) * Math.sin(a - Math.PI/2);
+    svg.append('text').attr('x',tx).attr('y',ty).attr('text-anchor','middle').attr('fill','#666').attr('font-size',8).text(Math.round(t*100)+'%');
+  });
+}
+
+function updateChart() {
+  const el = document.getElementById('chart');
+  const rect = el.getBoundingClientRect();
+  const w = rect.width, h = rect.height;
+  if (w <= 0 || h <= 0 || turnData.length === 0) return;
+
+  const svg = d3.select('#chart');
+  svg.selectAll('*').remove();
+
+  const margin = {top:15, right:15, bottom:25, left:45};
+  const iw = w - margin.left - margin.right;
+  const ih = h - margin.top - margin.bottom;
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const threshold = getThreshold();
+  const x = d3.scaleLinear().domain([1, Math.max(turnData.length, 5)]).range([0, iw]);
+  const maxY = Math.max(d3.max(turnData, d => d.output), threshold * 2, 1000);
+  const y = d3.scaleLinear().domain([0, maxY]).range([ih, 0]);
+
+  g.append('g').attr('transform', `translate(0,${ih})`).call(d3.axisBottom(x).ticks(Math.min(turnData.length, 10)).tickFormat(d => `#${d}`)).selectAll('text').attr('fill','#858585').attr('font-size',9);
+  g.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => d >= 1000 ? (d/1000)+'k' : d)).selectAll('text').attr('fill','#858585').attr('font-size',9);
+  g.selectAll('.domain,.tick line').attr('stroke','#444');
+
+  g.append('line').attr('x1',0).attr('x2',iw).attr('y1',y(threshold)).attr('y2',y(threshold)).attr('stroke','#f59e0b').attr('stroke-dasharray','4,3').attr('opacity',0.6);
+  g.append('text').attr('x',iw).attr('y',y(threshold)-4).attr('text-anchor','end').attr('fill','#f59e0b').attr('font-size',9).text(`递减阈值 (${threshold})`);
+
+  const line = d3.line().x(d => x(d.turn)).y(d => y(d.output)).curve(d3.curveMonotoneX);
+  g.append('path').datum(turnData).attr('d', line).attr('fill','none').attr('stroke','#4a9eed').attr('stroke-width',2);
+
+  turnData.forEach(d => {
+    const color = d.diminishing ? '#ef4444' : d.output < threshold ? '#f59e0b' : '#4a9eed';
+    g.append('circle').attr('cx', x(d.turn)).attr('cy', y(d.output)).attr('r', 4).attr('fill', color);
+    if (d.diminishing) {
+      g.append('text').attr('x', x(d.turn)).attr('y', y(d.output) - 8).attr('text-anchor','middle').attr('fill','#ef4444').attr('font-size',9).text('递减!');
+    }
+  });
+}
+
+function updateCost() {
+  const inputEst = totalOutput * 15;
+  const outFee = (totalOutput / 1e6) * 15;
+  const inFee = (inputEst / 1e6) * 3;
+  document.getElementById('costOutput').textContent = totalOutput.toLocaleString();
+  document.getElementById('costInput').textContent = inputEst.toLocaleString();
+  document.getElementById('costOutFee').textContent = '$' + outFee.toFixed(4);
+  document.getElementById('costInFee').textContent = '$' + inFee.toFixed(4);
+  const total = outFee + inFee;
+  const totalEl = document.getElementById('costTotal');
+  totalEl.textContent = '$' + total.toFixed(4);
+  totalEl.className = total > 1 ? 'cost-danger' : total > 0.1 ? 'cost-warn' : 'cost-val';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runNormal() {
+  if (running) return;
+  running = true; resetAll();
+  const budget = getBudget();
+  document.getElementById('statusText').textContent = '正常任务: 逐步消耗 Token，在预算内完成';
+
+  const outputs = [3000, 2500, 2000, 1500, 1000, 800];
+  let nudged = false;
+
+  for (let i = 0; i < outputs.length; i++) {
+    if (!running) break;
+    const out = outputs[i];
+    totalOutput += out;
+    turnData.push({ turn: i+1, output: out, diminishing: false });
+
+    addLog(`Turn ${i+1}: 输出 ${out} Token (累计: ${totalOutput})`, 'log-turn');
+    const pct = totalOutput / budget;
+    if (!nudged && pct >= 0.9) {
+      nudged = true;
+      addLog(`⚠ 90% nudge: "已完成 Token 目标的 ${Math.round(pct*100)}%。继续工作——不要总结。"`, 'log-nudge');
+    }
+
+    updateGauge(totalOutput, budget);
+    updateChart();
+    updateCost();
+    await sleep(600);
+  }
+
+  addLog('✓ 任务正常完成', 'log-ok');
+  document.getElementById('statusText').textContent = '正常完成: Token 在预算范围内';
+  running = false;
+}
+
+async function runRunaway() {
+  if (running) return;
+  running = true; resetAll();
+  const budget = getBudget();
+  document.getElementById('statusText').textContent = '失控场景: 模型无限续写，烧穿预算';
+
+  let nudged = false;
+  for (let i = 0; i < 20; i++) {
+    if (!running) break;
+    const out = 800 + Math.floor(Math.random() * 400);
+    totalOutput += out;
+    turnData.push({ turn: i+1, output: out, diminishing: false });
+
+    addLog(`Turn ${i+1}: 输出 ${out} Token (累计: ${totalOutput})`, 'log-turn');
+    const pct = totalOutput / budget;
+    if (!nudged && pct >= 0.9) {
+      nudged = true;
+      addLog(`⚠ 90% nudge 注入`, 'log-nudge');
+    }
+    if (pct >= 1.0) {
+      addLog(`🚫 超出预算! ${totalOutput} > ${budget}`, 'log-diminish');
+      addLog('如果没有预算控制，这里会继续烧钱...', 'log-diminish');
+      break;
+    }
+
+    updateGauge(totalOutput, budget);
+    updateChart();
+    updateCost();
+    await sleep(350);
+  }
+
+  document.getElementById('statusText').textContent = `失控! 消耗 ${totalOutput} Token，费用 $${((totalOutput/1e6)*15 + (totalOutput*15/1e6)*3).toFixed(2)}`;
+  running = false;
+}
+
+async function runDiminishing() {
+  if (running) return;
+  running = true; resetAll();
+  const budget = getBudget();
+  const threshold = getThreshold();
+  const streakLimit = getStreakLimit();
+  document.getElementById('statusText').textContent = '递减回报: 输出越来越少，检测到无效循环';
+
+  const outputs = [3000, 2500, 2000, 400, 300, 200];
+  let lowStreak = 0;
+
+  for (let i = 0; i < outputs.length; i++) {
+    if (!running) break;
+    const out = outputs[i];
+    totalOutput += out;
+    const isDiminishing = totalOutput > 5000 && out < threshold;
+    turnData.push({ turn: i+1, output: out, diminishing: isDiminishing });
+
+    addLog(`Turn ${i+1}: +${out} Token (累计输出: ${totalOutput})`, 'log-turn');
+
+    if (totalOutput > 5000) {
+      if (out < threshold) {
+        lowStreak++;
+        addLog(`  → 增量 < ${threshold}, lowStreak = ${lowStreak}/${streakLimit}`, 'log-nudge');
+        if (lowStreak >= streakLimit) {
+          addLog(`🚫 连续 ${lowStreak} 次递减，检测到无效循环！停止续写`, 'log-diminish');
+          updateGauge(totalOutput, budget);
+          updateChart();
+          updateCost();
+          break;
+        }
+      } else {
+        lowStreak = 0;
+        addLog('  → 正常输出', 'log-ok');
+      }
+    } else {
+      addLog(`  → 总输出 < 5000，跳过递减检测`, 'log-ok');
+    }
+
+    updateGauge(totalOutput, budget);
+    updateChart();
+    updateCost();
+    await sleep(600);
+  }
+
+  document.getElementById('statusText').textContent = `递减回报检测: 在第 ${turnData.length} 轮停止，节省了后续无效消耗`;
+  running = false;
+}
+
+function resetAll() {
+  running = false;
+  turnData = [];
+  totalOutput = 0;
+  document.getElementById('logArea').innerHTML = '';
+  updateGauge(0, getBudget());
+  d3.select('#chart').selectAll('*').remove();
+  updateCost();
+  document.getElementById('statusText').textContent = '选择场景模拟 Token 消耗';
+}
+
+updateGauge(0, getBudget());
+</script>
+</body>
+</html>

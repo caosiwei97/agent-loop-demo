@@ -35,14 +35,14 @@ function fixedDelay(attempt) {
 
 // 策略2：指数退避（好）
 function exponentialBackoff(attempt) {
-  const baseDelay = 1000;
+  const baseDelay = 500;
   const maxDelay = 30000;
   return Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
 }
 
-// 策略3：指数退避 + 随机抖动（最好）
+// 策略3：指数退避 + 随机抖动（最好）— Claude Code 的做法
 function getRetryDelay(attempt) {
-  const baseDelay = 1000;
+  const baseDelay = 500;
   const maxDelay = 30000;
   const exponentialDelay = baseDelay * Math.pow(2, attempt);
   const jitter = Math.random() * exponentialDelay * 0.25;

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>输出截断恢复模拟器</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+h2{color:#569cd6;font-size:16px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.status{color:#6a9955;font-size:12px}
+.main{display:flex;flex:1;gap:12px;overflow:hidden}
+.left{flex:1.2;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.right{flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.panel{border:1px solid #333;border-radius:6px;padding:12px;overflow:hidden;display:flex;flex-direction:column}
+.panel-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.flow-container{flex:1;overflow:hidden}
+.output-area{flex:1;overflow-y:auto;font-size:12px;line-height:1.6;padding:4px}
+.output-text{color:#cccccc}
+.output-truncated{color:#ef4444;border-top:2px dashed #ef4444;padding-top:4px;margin-top:4px}
+.bubble{margin:6px 0;padding:8px 12px;border-radius:8px;font-size:11px;animation:fadeIn .3s;max-width:90%}
+.bubble-system{background:#2a2a1a;color:#ffd8a8;border:1px solid #f59e0b44;margin-left:auto}
+.bubble-model{background:#1a2a3c;color:#a5d8ff;border:1px solid #4a9eed44}
+.state-panel{padding:8px;border:1px solid #333;border-radius:4px;background:#252526;font-size:11px}
+.state-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #2a2a2a}
+.state-label{color:#858585}
+.state-val{color:#dcdcaa}
+.state-val.danger{color:#ef4444}
+.state-val.warn{color:#f59e0b}
+.state-val.ok{color:#22c55e}
+.step-indicator{display:flex;gap:4px;margin:8px 0;align-items:center}
+.step-dot{width:28px;height:28px;border-radius:50%;border:2px solid #444;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;transition:all .3s}
+.step-dot.active{border-color:#569cd6;color:#569cd6;background:rgba(86,156,214,0.1)}
+.step-dot.done{border-color:#22c55e;color:#22c55e;background:rgba(34,197,94,0.1)}
+.step-dot.fail{border-color:#ef4444;color:#ef4444;background:rgba(239,68,68,0.1)}
+.step-connector{width:20px;height:2px;background:#444;align-self:center}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>输出截断恢复模拟器</h2>
+  <div class="controls">
+    <button onclick="runRecoverySuccess()">模拟: 恢复成功</button>
+    <button onclick="runRecoveryFail()">模拟: 三次都截断(认栽)</button>
+    <button onclick="resetAll()">重置</button>
+    <span class="status" id="statusText">三步渐进式恢复: 提上限 → 注入恢复消息 → 认栽</span>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="panel" style="flex:0 0 auto">
+        <div class="panel-title">恢复流程</div>
+        <svg id="flowDag" style="width:100%;height:100px"></svg>
+      </div>
+      <div class="panel" style="flex:1">
+        <div class="panel-title">模型输出 + 恢复对话</div>
+        <div class="output-area" id="outputArea"></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel" style="flex:0 0 auto">
+        <div class="panel-title">当前状态</div>
+        <div class="step-indicator" id="stepIndicator">
+          <div class="step-dot" id="step0">0</div>
+          <div class="step-connector"></div>
+          <div class="step-dot" id="step1">1</div>
+          <div class="step-connector"></div>
+          <div class="step-dot" id="step2">2</div>
+          <div class="step-connector"></div>
+          <div class="step-dot" id="step3">3</div>
+        </div>
+        <div class="state-panel" id="statePanel">
+          <div class="state-row"><span class="state-label">max_output_tokens:</span><span class="state-val" id="stMaxOutput">8192</span></div>
+          <div class="state-row"><span class="state-label">恢复次数:</span><span class="state-val" id="stRecovery">0 / 3</span></div>
+          <div class="state-row"><span class="state-label">finishReason:</span><span class="state-val" id="stFinish">-</span></div>
+          <div class="state-row"><span class="state-label">累计输出:</span><span class="state-val" id="stAccum">0 字符</span></div>
+          <div class="state-row"><span class="state-label">状态:</span><span class="state-val ok" id="stStatus">等待</span></div>
+        </div>
+      </div>
+      <div class="panel" style="flex:1">
+        <div class="panel-title">恢复消息模板</div>
+        <div style="font-size:11px;overflow-y:auto;flex:1">
+          <div style="margin-bottom:8px;padding:6px;border-left:2px solid #f59e0b;background:#2a2a1a">
+            <b style="color:#f59e0b">第 1 次:</b><br>
+            "直接从断点继续——不要道歉，不要回顾。把剩余工作拆成更小的块。"
+          </div>
+          <div style="margin-bottom:8px;padding:6px;border-left:2px solid #f59e0b;background:#2a2a1a">
+            <b style="color:#f59e0b">第 2 次:</b><br>
+            "再次被截断。大幅精简，只列关键结论。"
+          </div>
+          <div style="margin-bottom:8px;padding:6px;border-left:2px solid #f59e0b;background:#2a2a1a">
+            <b style="color:#f59e0b">第 3 次:</b><br>
+            "第三次截断。如果还说不完，返回已完成的部分结论。"
+          </div>
+          <div style="padding:6px;border-left:2px solid #858585;color:#858585">
+            <b>设计讲究:</b><br>
+            • "不要道歉" — 模型的第一反应<br>
+            • "不要回顾" — 模型的第二反应<br>
+            • "从断点继续" — 最高效的续写方式
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const recoveryMessages = [
+  '直接从断点继续——不要道歉，不要回顾。把剩余工作拆成更小的块。',
+  '再次被截断。大幅精简，只列关键结论。',
+  '第三次截断。如果还说不完，返回已完成的部分结论。',
+];
+
+let running = false;
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function drawFlowDag(activeNode) {
+  const svg = d3.select('#flowDag');
+  svg.selectAll('*').remove();
+  const svgRect = svg.node().getBoundingClientRect();
+  const w = svgRect.width, h = svgRect.height;
+  if (w <= 0 || h <= 0) return;
+
+  const padX = 30;
+  const nw = 80, nh = 32;
+  const positions = [
+    { id: 'start', x: padX + nw/2,        y: h/2, label: '请求' },
+    { id: 'step1', x: padX + nw/2 + (w - padX*2 - nw) * 0.25, y: h/2, label: '提上限' },
+    { id: 'step2', x: padX + nw/2 + (w - padX*2 - nw) * 0.50, y: h/2, label: '恢复消息' },
+    { id: 'step3', x: padX + nw/2 + (w - padX*2 - nw) * 0.75, y: h/2, label: '认栽' },
+    { id: 'done',  x: w - padX - nw/2,    y: h/2, label: '完成' },
+  ];
+
+  const flowEdges = [
+    { from: 'start', to: 'step1', label: 'length' },
+    { from: 'step1', to: 'step2', label: '仍截断' },
+    { from: 'step2', to: 'step3', label: '>3次' },
+    { from: 'step1', to: 'done', label: '成功', curve: -25 },
+    { from: 'step2', to: 'done', label: '成功', curve: 25 },
+    { from: 'step3', to: 'done', label: '' },
+  ];
+
+  const defs = svg.append('defs');
+  defs.append('marker').attr('id','fArrow').attr('viewBox','0 0 10 10')
+    .attr('refX',9).attr('refY',5).attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M 0 1 L 9 5 L 0 9 z').attr('fill','#888');
+
+  const g = svg.append('g');
+
+  flowEdges.forEach(e => {
+    const from = positions.find(p => p.id === e.from);
+    const to = positions.find(p => p.id === e.to);
+    const sx = from.x + nw/2 + 2;
+    const ex = to.x - nw/2 - 5;
+    let path;
+    if (e.curve) {
+      const my = from.y + e.curve;
+      path = `M${sx},${from.y} Q${(sx+ex)/2},${my} ${ex},${to.y}`;
+    } else {
+      path = `M${sx},${from.y} L${ex},${to.y}`;
+    }
+    g.append('path').attr('d', path).attr('fill','none').attr('stroke','#555').attr('stroke-width',1.2).attr('marker-end','url(#fArrow)');
+    if (e.label) {
+      const lx = (sx + ex) / 2;
+      const ly = e.curve ? from.y + e.curve/2 - 4 : (from.y + to.y)/2 - 7;
+      g.append('text').attr('x', lx).attr('y', ly).attr('text-anchor','middle').attr('fill','#858585').attr('font-size',8).text(e.label);
+    }
+  });
+
+  positions.forEach(p => {
+    const isActive = p.id === activeNode;
+    const color = isActive ? '#569cd6' : '#444';
+    const fill = isActive ? 'rgba(86,156,214,0.15)' : '#252526';
+    g.append('rect').attr('x', p.x - nw/2).attr('y', p.y - nh/2).attr('width', nw).attr('height', nh).attr('rx',6).attr('fill',fill).attr('stroke',color).attr('stroke-width', isActive ? 2 : 1);
+    g.append('text').attr('x', p.x).attr('y', p.y + 4).attr('text-anchor','middle').attr('fill', isActive ? '#a5d8ff' : '#858585').attr('font-size',10).text(p.label);
+  });
+}
+
+function setStep(step) {
+  for (let i = 0; i <= 3; i++) {
+    const el = document.getElementById(`step${i}`);
+    el.className = 'step-dot' + (i < step ? ' done' : i === step ? ' active' : '');
+  }
+}
+
+function addOutput(text, cls) {
+  const area = document.getElementById('outputArea');
+  const el = document.createElement('div');
+  el.className = cls || '';
+  el.innerHTML = text;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
+
+function addBubble(text, type) {
+  const area = document.getElementById('outputArea');
+  const el = document.createElement('div');
+  el.className = `bubble bubble-${type}`;
+  el.textContent = text;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
+
+async function simulateTyping(text, speed) {
+  const area = document.getElementById('outputArea');
+  const el = document.createElement('span');
+  el.className = 'output-text';
+  area.appendChild(el);
+  for (let i = 0; i < text.length; i += 3) {
+    el.textContent += text.slice(i, i+3);
+    area.scrollTop = area.scrollHeight;
+    await sleep(speed || 20);
+    if (!running) return text.length;
+  }
+  return text.length;
+}
+
+async function runRecoverySuccess() {
+  if (running) return;
+  running = true;
+  resetAll();
+  document.getElementById('statusText').textContent = '模拟: 第二次恢复成功';
+
+  const outputTexts = [
+    '这是一段非常详细的分析报告。首先，从架构层面来看，该项目采用了模块化设计，包含了以下核心模块：核心引擎、插件系统、配置管理、日志系统。在核心引擎中，我们发现了几处可以优化的地方：1) 缓存策略使用了简单的 LRU，但在高并发场景下性能不足 2) 事件总线采用同步分发...',
+    '继续安全审计部分。SQL 注入风险：发现 2 处未参数化的查询。XSS 风险：前端模板引擎未启用自动转义。建议：使用参数化查询，启用 CSP 头。',
+  ];
+
+  let totalChars = 0;
+
+  drawFlowDag('start');
+  setStep(0);
+  addBubble('请对这段代码做详细的代码审查', 'system');
+  await sleep(500);
+
+  const chars1 = await simulateTyping(outputTexts[0], 15);
+  totalChars += chars1;
+  addOutput('<div class="output-truncated">⚡ 输出被截断 (finishReason: "length")</div>');
+  document.getElementById('stFinish').textContent = 'length';
+  document.getElementById('stFinish').className = 'state-val danger';
+  document.getElementById('stAccum').textContent = totalChars + ' 字符';
+  await sleep(600);
+
+  drawFlowDag('step1');
+  setStep(1);
+  document.getElementById('stMaxOutput').textContent = '8192 → 65536';
+  document.getElementById('stMaxOutput').className = 'state-val warn';
+  document.getElementById('stStatus').textContent = '静默提高上限';
+  document.getElementById('stStatus').className = 'state-val warn';
+  addBubble('[系统] 静默提高 max_output_tokens: 8192 → 65536', 'system');
+  await sleep(800);
+
+  drawFlowDag('step2');
+  setStep(2);
+  document.getElementById('stRecovery').textContent = '1 / 3';
+  document.getElementById('stStatus').textContent = '恢复中...';
+  addBubble(recoveryMessages[0], 'system');
+  await sleep(500);
+
+  const chars2 = await simulateTyping(outputTexts[1], 15);
+  totalChars += chars2;
+  document.getElementById('stAccum').textContent = totalChars + ' 字符';
+  document.getElementById('stFinish').textContent = 'stop';
+  document.getElementById('stFinish').className = 'state-val ok';
+  document.getElementById('stStatus').textContent = '恢复成功 ✓';
+  document.getElementById('stStatus').className = 'state-val ok';
+
+  drawFlowDag('done');
+  setStep(3);
+  document.getElementById('step3').className = 'step-dot done';
+  addBubble('✓ 恢复成功 — 模型从断点继续并正常完成', 'model');
+
+  document.getElementById('statusText').textContent = '恢复成功: 提高上限 + 1次恢复消息后正常完成';
+  running = false;
+}
+
+async function runRecoveryFail() {
+  if (running) return;
+  running = true;
+  resetAll();
+  document.getElementById('statusText').textContent = '模拟: 连续截断3次后认栽';
+
+  const outputTexts = [
+    '详细分析报告第一部分：架构分析。项目采用微服务架构，包含 Auth Service、API Gateway、Business Logic Layer、Data Access Layer...',
+    '继续第二部分：性能问题。数据库查询未使用索引，N+1 查询问题严重，建议引入 DataLoader 模式...',
+    '第三部分精简版：安全漏洞 3 处，性能瓶颈 5 处，代码规范问题 12 处。优先修复：SQL注入(P0)...',
+  ];
+
+  let totalChars = 0;
+
+  drawFlowDag('start');
+  setStep(0);
+  addBubble('请对这段代码做详细的代码审查', 'system');
+  await sleep(500);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!running) break;
+
+    const chars = await simulateTyping(outputTexts[attempt], 15);
+    totalChars += chars;
+    addOutput('<div class="output-truncated">⚡ 输出被截断 (finishReason: "length")</div>');
+    document.getElementById('stFinish').textContent = 'length';
+    document.getElementById('stFinish').className = 'state-val danger';
+    document.getElementById('stAccum').textContent = totalChars + ' 字符';
+    await sleep(400);
+
+    if (attempt === 0) {
+      drawFlowDag('step1');
+      setStep(1);
+      document.getElementById('stMaxOutput').textContent = '8192 → 65536';
+      document.getElementById('stMaxOutput').className = 'state-val warn';
+      addBubble('[系统] 静默提高 max_output_tokens: 8192 → 65536', 'system');
+      await sleep(500);
+    }
+
+    drawFlowDag('step2');
+    setStep(2);
+    document.getElementById('stRecovery').textContent = `${attempt + 1} / 3`;
+    document.getElementById('stStatus').textContent = `恢复尝试 ${attempt + 1}/3`;
+    document.getElementById('stStatus').className = 'state-val warn';
+
+    addBubble(recoveryMessages[attempt], 'system');
+    await sleep(600);
+  }
+
+  drawFlowDag('step3');
+  setStep(3);
+  document.getElementById('step3').className = 'step-dot fail';
+  document.getElementById('stStatus').textContent = '认栽 — 返回不完整结果';
+  document.getElementById('stStatus').className = 'state-val danger';
+
+  addBubble('3次恢复均失败，返回不完整结果并标记为"输出被截断"', 'model');
+  addOutput('<div style="margin-top:8px;padding:8px;border:1px solid #ef4444;border-radius:4px;background:#3c1a1a;font-size:11px"><b style="color:#ef4444">结论:</b> 64K 限制下连续3次说不完 → 任务拆分有问题，需人工介入</div>');
+
+  document.getElementById('statusText').textContent = '认栽: 3次恢复均失败，任务需要拆分';
+  running = false;
+}
+
+function resetAll() {
+  running = false;
+  document.getElementById('outputArea').innerHTML = '';
+  document.getElementById('stMaxOutput').textContent = '8192';
+  document.getElementById('stMaxOutput').className = 'state-val';
+  document.getElementById('stRecovery').textContent = '0 / 3';
+  document.getElementById('stFinish').textContent = '-';
+  document.getElementById('stFinish').className = 'state-val';
+  document.getElementById('stAccum').textContent = '0 字符';
+  document.getElementById('stStatus').textContent = '等待';
+  document.getElementById('stStatus').className = 'state-val ok';
+  setStep(-1);
+  drawFlowDag(null);
+}
+
+drawFlowDag(null);
+</script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>并发安全调度模拟器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+h2{color:#569cd6;font-size:16px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid #333}
+.tab{padding:8px 16px;font-size:12px;cursor:pointer;border-radius:4px 4px 0 0;background:#252526;color:#858585;border:1px solid transparent;border-bottom:none;font-family:inherit}
+.tab:hover{color:#cccccc;background:#2d2d2d}
+.tab.active{background:#1e1e1e;color:#569cd6;border-color:#333;border-bottom-color:#1e1e1e;position:relative;top:1px}
+.tab-content{display:none;flex:1;overflow:hidden;flex-direction:column;gap:10px}
+.tab-content.active{display:flex}
+
+button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
+button:hover{background:#1177bb}
+button:disabled{background:#333;color:#777;cursor:not-allowed}
+.controls{display:flex;gap:8px;align-items:center}
+.status{color:#6a9955;font-size:12px}
+
+.gantt{flex:1;overflow-y:auto;padding:10px}
+.gantt-row{display:flex;align-items:center;margin:4px 0;animation:fadeIn .3s}
+.gantt-label{min-width:180px;font-size:11px;color:#cccccc;display:flex;align-items:center;gap:6px}
+.gantt-track{flex:1;height:24px;background:#252526;border-radius:3px;position:relative;overflow:hidden}
+.gantt-bar{position:absolute;top:2px;bottom:2px;border-radius:2px;display:flex;align-items:center;padding:0 6px;font-size:10px;white-space:nowrap;transition:width .3s,left .3s}
+.bar-read{background:#2a4a2a;border:1px solid #22c55e;color:#b2f2bb}
+.bar-write{background:#4a2a2a;border:1px solid #f44747;color:#ffc9c9}
+.bar-bash{background:#2a3a4a;border:1px solid #4a9eed;color:#a5d8ff}
+.bar-bash-fail{background:#4a2a2a;border:1px solid #f44747;color:#ffc9c9}
+.bar-cancelled{background:#333;border:1px dashed #858585;color:#858585;text-decoration:line-through}
+.bar-blocked{background:#333;border:1px dashed #f59e0b;color:#f59e0b}
+
+.tag{font-size:9px;padding:1px 4px;border-radius:2px;text-transform:uppercase}
+.tag-read{background:#1a3c1a;color:#22c55e}
+.tag-write{background:#3c1a1a;color:#f44747}
+.tag-bash{background:#1a2a3c;color:#4a9eed}
+
+.time-axis{display:flex;justify-content:space-between;padding:0 180px 0 0;margin-top:4px;font-size:10px;color:#555;border-top:1px solid #333;padding-top:4px}
+.legend{display:flex;gap:12px;font-size:11px;color:#858585;border-top:1px solid #333;padding-top:6px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-dot{width:10px;height:10px;border-radius:2px}
+
+.result-row{font-size:11px;padding:4px 8px;margin:2px 0;border-radius:2px;animation:fadeIn .3s}
+.result-ok{background:#1a3c1a;color:#b2f2bb}
+.result-fail{background:#3c1a1a;color:#ffc9c9}
+.result-info{background:#1a2a3c;color:#a5d8ff}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>并发安全调度模拟器</h2>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab(0)">读并发 + 写串行</div>
+    <div class="tab" onclick="switchTab(1)">Bash 级联取消</div>
+    <div class="tab" onclick="switchTab(2)">调用顺序 vs 完成顺序</div>
+  </div>
+
+  <!-- Tab 0: Read concurrent, Write serial -->
+  <div class="tab-content active" id="tab0">
+    <div class="controls">
+      <button onclick="runConcurrency()">运行调度</button>
+      <button onclick="resetTab(0)">重置</button>
+      <span class="status" id="t0status">读操作并发执行，写操作等前面的全部完成后独占执行</span>
+    </div>
+    <div class="gantt" id="t0gantt"></div>
+    <div id="t0results"></div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#2a4a2a;border:1px solid #22c55e"></div>Read (可并发)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a2a2a;border:1px solid #f44747"></div>Edit (独占)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#333;border:1px dashed #f59e0b"></div>阻塞等待</div>
+    </div>
+  </div>
+
+  <!-- Tab 1: Bash cascade cancel -->
+  <div class="tab-content" id="tab1">
+    <div class="controls">
+      <button onclick="runCascade()">运行级联取消</button>
+      <button onclick="resetTab(1)">重置</button>
+      <span class="status" id="t1status">Bash 命令失败 → 兄弟 Bash 被取消 → Read 不受影响</span>
+    </div>
+    <div class="gantt" id="t1gantt"></div>
+    <div id="t1results"></div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#2a3a4a;border:1px solid #4a9eed"></div>Bash (正常)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a2a2a;border:1px solid #f44747"></div>Bash (失败)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#333;border:1px dashed #858585"></div>被取消</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a4a2a;border:1px solid #22c55e"></div>Read (不受影响)</div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Result ordering -->
+  <div class="tab-content" id="tab2">
+    <div class="controls">
+      <button onclick="runOrdering()">运行顺序对比</button>
+      <button onclick="resetTab(2)">重置</button>
+      <span class="status" id="t2status">结果按模型调用顺序返回，不是按完成顺序</span>
+    </div>
+    <div class="gantt" id="t2gantt"></div>
+    <div id="t2results"></div>
+  </div>
+</div>
+
+<script>
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function switchTab(idx){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.querySelectorAll('.tab-content').forEach((t,i)=>t.classList.toggle('active',i===idx));
+}
+
+function addGanttRow(container, label, tagCls, tagText, barCls, barText, left, width) {
+  const row = document.createElement('div');
+  row.className = 'gantt-row';
+  row.innerHTML = `
+    <div class="gantt-label"><span class="tag ${tagCls}">${tagText}</span> ${label}</div>
+    <div class="gantt-track"><div class="gantt-bar ${barCls}" style="left:${left}%;width:${width}%">${barText}</div></div>`;
+  container.appendChild(row);
+  row.scrollIntoView({behavior:'smooth',block:'nearest'});
+  return row;
+}
+
+function addResult(container, text, cls) {
+  const el = document.createElement('div');
+  el.className = `result-row ${cls}`;
+  el.textContent = text;
+  container.appendChild(el);
+}
+
+// === Tab 0: Concurrency ===
+let t0running = false;
+async function runConcurrency() {
+  if(t0running) return;
+  t0running = true;
+  const g = document.getElementById('t0gantt');
+  const r = document.getElementById('t0results');
+  document.getElementById('t0status').textContent = '模型返回: Read A, Read B, Read C, Edit D — 开始调度...';
+  await sleep(300);
+
+  addResult(r, '调度决策: Read A/B/C 只读 → 可并发 | Edit D 写操作 → 等前面完成后独占', 'result-info');
+  await sleep(400);
+
+  // Reads start at same time (0%), different durations
+  addGanttRow(g, 'Read A (src/utils.ts)', 'tag-read', 'READ', 'bar-read', '150ms', 0, 30);
+  addGanttRow(g, 'Read B (src/index.ts)', 'tag-read', 'READ', 'bar-read', '100ms', 0, 20);
+  addGanttRow(g, 'Read C (package.json)', 'tag-read', 'READ', 'bar-read', '80ms', 0, 16);
+  await sleep(500);
+
+  addResult(r, '✓ Read B 完成 (100ms)', 'result-ok');
+  await sleep(200);
+  addResult(r, '✓ Read C 完成 (80ms)', 'result-ok');
+  await sleep(200);
+  addResult(r, '✓ Read A 完成 (150ms) — 所有读操作完毕', 'result-ok');
+  await sleep(400);
+
+  // Edit blocked, then executes
+  addGanttRow(g, 'Edit D (src/utils.ts)', 'tag-write', 'EDIT', 'bar-blocked', '等待读完成...', 0, 30);
+  await sleep(400);
+
+  // Replace the blocked bar with executing bar
+  const editRow = g.lastElementChild;
+  editRow.querySelector('.gantt-bar').className = 'gantt-bar bar-write';
+  editRow.querySelector('.gantt-bar').style.left = '32%';
+  editRow.querySelector('.gantt-bar').style.width = '25%';
+  editRow.querySelector('.gantt-bar').textContent = '独占执行 200ms';
+  await sleep(500);
+
+  addResult(r, '✓ Edit D 完成 — 独占执行，保证写安全', 'result-ok');
+  addResult(r, '总耗时: max(150,100,80) + 200 = 350ms (而非 150+100+80+200 = 530ms)', 'result-info');
+
+  document.getElementById('t0status').textContent = '完成 — 读操作并发节省了 180ms，写操作保证了安全';
+  t0running = false;
+}
+
+// === Tab 1: Cascade Cancel ===
+let t1running = false;
+async function runCascade() {
+  if(t1running) return;
+  t1running = true;
+  const g = document.getElementById('t1gantt');
+  const r = document.getElementById('t1results');
+  document.getElementById('t1status').textContent = '模型返回: mkdir, touch, npm test, Read pkg — 开始执行...';
+  await sleep(300);
+
+  addResult(r, '调度: 所有工具开始执行', 'result-info');
+  await sleep(200);
+
+  addGanttRow(g, 'mkdir -p src/components', 'tag-bash', 'BASH', 'bar-bash', '执行中...', 0, 25);
+  addGanttRow(g, 'touch src/components/Button.tsx', 'tag-bash', 'BASH', 'bar-bash', '执行中...', 0, 30);
+  addGanttRow(g, 'npm test', 'tag-bash', 'BASH', 'bar-bash', '执行中...', 0, 40);
+  addGanttRow(g, 'Read package.json', 'tag-read', 'READ', 'bar-read', '执行中...', 0, 20);
+  await sleep(600);
+
+  // mkdir fails
+  const rows = g.querySelectorAll('.gantt-row');
+  rows[0].querySelector('.gantt-bar').className = 'gantt-bar bar-bash-fail';
+  rows[0].querySelector('.gantt-bar').textContent = '✗ 失败: EACCES';
+  addResult(r, '✗ mkdir 失败: Permission denied (EACCES)', 'result-fail');
+  await sleep(400);
+
+  // touch gets cancelled (depends on mkdir)
+  rows[1].querySelector('.gantt-bar').className = 'gantt-bar bar-cancelled';
+  rows[1].querySelector('.gantt-bar').textContent = '取消 (依赖 mkdir)';
+  addResult(r, '⊘ touch 被级联取消 — 依赖 mkdir 创建的目录', 'result-fail');
+  await sleep(400);
+
+  // npm test gets cancelled (sibling bash)
+  rows[2].querySelector('.gantt-bar').className = 'gantt-bar bar-cancelled';
+  rows[2].querySelector('.gantt-bar').textContent = '取消 (Bash 兄弟失败)';
+  addResult(r, '⊘ npm test 被级联取消 — Bash 兄弟命令失败', 'result-fail');
+  await sleep(400);
+
+  // Read completes normally
+  rows[3].querySelector('.gantt-bar').textContent = '✓ 完成';
+  addResult(r, '✓ Read package.json 正常完成 — 不受 Bash 失败影响', 'result-ok');
+  await sleep(300);
+
+  addResult(r, '规则: Bash 错误级联取消兄弟 Bash，但 Read 类工具不受影响', 'result-info');
+  document.getElementById('t1status').textContent = '完成 — mkdir 失败 → touch/npm 取消 → Read 正常';
+  t1running = false;
+}
+
+// === Tab 2: Result Ordering ===
+let t2running = false;
+async function runOrdering() {
+  if(t2running) return;
+  t2running = true;
+  const g = document.getElementById('t2gantt');
+  const r = document.getElementById('t2results');
+  document.getElementById('t2status').textContent = '模型调用顺序: A → B → C，完成顺序: B → C → A';
+  await sleep(300);
+
+  addResult(r, '模型调用顺序: Read A (500ms), Read B (100ms), Read C (300ms)', 'result-info');
+  await sleep(300);
+
+  // All start at same time, different durations
+  addGanttRow(g, 'Read A (调用顺序: #1)', 'tag-read', '#1', 'bar-read', '500ms — 最慢', 0, 50);
+  addGanttRow(g, 'Read B (调用顺序: #2)', 'tag-read', '#2', 'bar-read', '100ms — 最快', 0, 10);
+  addGanttRow(g, 'Read C (调用顺序: #3)', 'tag-read', '#3', 'bar-read', '300ms', 0, 30);
+  await sleep(400);
+
+  addResult(r, '[T+100ms] Read B 先完成 ← 最快', 'result-ok');
+  await sleep(300);
+  addResult(r, '[T+300ms] Read C 完成', 'result-ok');
+  await sleep(300);
+  addResult(r, '[T+500ms] Read A 最后完成', 'result-ok');
+  await sleep(400);
+
+  addResult(r, '', 'result-info');
+  addResult(r, '完成顺序: B → C → A', 'result-info');
+  addResult(r, '返回顺序: A → B → C (按模型原始调用顺序)', 'result-info');
+  await sleep(300);
+  addResult(r, '原因: API 靠 tool_use_id 匹配，保持原始顺序让日志更易排查', 'result-info');
+
+  document.getElementById('t2status').textContent = '完成 — 完成顺序 B→C→A，返回顺序 A→B→C (按调用序)';
+  t2running = false;
+}
+
+function resetTab(idx) {
+  document.getElementById(`t${idx}gantt`).innerHTML = '';
+  document.getElementById(`t${idx}results`).innerHTML = '';
+  const msgs = [
+    '读操作并发执行，写操作等前面的全部完成后独占执行',
+    'Bash 命令失败 → 兄弟 Bash 被取消 → Read 不受影响',
+    '结果按模型调用顺序返回，不是按完成顺序',
+  ];
+  document.getElementById(`t${idx}status`).textContent = msgs[idx];
+}
+</script>
+</body>
+</html>
