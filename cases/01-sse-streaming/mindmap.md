@@ -4,15 +4,28 @@
 ### 跑在标准 HTTP 上
 ### 重连友好 (Last-Event-ID)
 ### 认证简单 (API Key in Header)
+### 安全性优于 WebSocket
+#### 每次请求独立认证
+#### Token 过期立即拒绝
+#### WS 握手后数据帧无认证校验
 ## SSE 事件流
 ### message_start → 消息开始
+### content_block_start → 内容块开始
 ### content_block_delta → 逐 token 推送
 ### content_block_stop → 内容块结束
+### 一条消息可包含多个 content_block
 ### message_stop → 整条消息结束
 ## 核心：自回归生成
 ### 一个 token 一个 token 往外蹦
 ### 每个 delta 就是一个微小增量
 ### 前端逐 chunk 渲染 = 打字机效果
+## Last-Event-ID 重连机制
+### 断线后客户端携带最后收到的 ID
+### 服务端从断点续传
+### 避免全量重传导致的重复
 ## 不用 WebSocket 的原因
+### 双向能力在 LLM 场景浪费
+### 需手动实现重连逻辑
 ### 审批是低频事件
 ### SSE + HTTP POST = 双向通信
+### 认证只在握手时一次（安全风险）

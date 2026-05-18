@@ -7,138 +7,202 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
-.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:12px}
+.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
 h2{color:#569cd6;font-size:16px}
 .controls{display:flex;gap:8px;align-items:center}
-button{background:#0e639c;color:#fff;border:none;padding:8px 18px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px}
+button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
 button:hover{background:#1177bb}
 button:disabled{background:#333;color:#777;cursor:not-allowed}
 .status{color:#6a9955;font-size:12px}
 .main{display:flex;flex:1;gap:12px;overflow:hidden}
-.panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;font-size:13px}
-.panel-title{color:#569cd6;font-size:12px;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:4px}
-#fragments{background:#252526}
-#accumulated{background:#1a1a2e}
-.frag-item{padding:6px 8px;margin:4px 0;border-radius:3px;transition:all .3s}
-.frag-pending{background:#333;color:#666;border-left:3px solid #555}
-.frag-current{background:#1a3a5c;color:#fff;border-left:3px solid #569cd6}
-.frag-done{background:#1a3c1a;color:#b2f2bb;border-left:3px solid #22c55e}
-.buffer-line{padding:4px 0;font-size:14px}
-.buffer-accumulated{color:#dcdcaa}
-.parse-result{color:#ce9178}
-.parse-ok{color:#4ec9b0}
-.parse-fail{color:#f44747}
-.final{margin-top:12px;padding:10px;border:2px solid #22c55e;border-radius:6px;background:#1a3c1a}
-.final-title{color:#22c55e;font-size:14px;margin-bottom:4px}
-.step-info{color:#858585;font-size:12px;margin-top:8px}
+.panel{flex:1;border:1px solid #333;border-radius:6px;padding:10px;overflow-y:auto;font-size:12px}
+.panel-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+
+.sse-block{margin-bottom:6px;padding:5px 8px;border-radius:3px;background:#252526;animation:fadeIn .3s;font-size:11px;line-height:1.5;white-space:pre-wrap;border-left:3px solid #444}
+.sse-block.block-start{border-left-color:#c586c0}
+.sse-block.block-delta{border-left-color:#dcdcaa}
+.sse-block.block-stop{border-left-color:#22c55e}
+.sse-key{color:#ce9178}
+.sse-val{color:#6a9955}
+
+.buffer-section{margin-top:12px;padding:10px;border:1px solid #333;border-radius:4px;background:#252526}
+.buffer-label{color:#858585;font-size:10px;text-transform:uppercase;margin-bottom:4px}
+.buffer-content{color:#dcdcaa;font-size:13px;min-height:20px;word-break:break-all}
+.parse-status{margin-top:8px;font-size:12px;padding:4px 8px;border-radius:3px}
+.parse-fail{background:#3c1a1a;color:#f44747}
+.parse-ok{background:#1a3c1a;color:#22c55e}
+
+.final-result{margin-top:12px;padding:10px;border:2px solid #22c55e;border-radius:6px;background:#1a3c1a;animation:fadeIn .5s}
+.final-title{color:#22c55e;font-size:13px;margin-bottom:6px}
+.final-row{color:#cccccc;font-size:12px;margin:2px 0}
+.final-row span{color:#dcdcaa}
+
+.stats{display:flex;gap:16px;font-size:11px;color:#858585;border-top:1px solid #333;padding-top:6px}
+.stat-val{color:#dcdcaa}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 </style>
 </head>
 <body>
 <div class="container">
-  <div>
-    <h2>Tool Call 碎片拼接模拟器</h2>
-    <div class="controls">
-      <button id="btnNext" onclick="nextStep()">下一步</button>
-      <button id="btnAuto" onclick="autoPlay()">自动播放</button>
-      <button onclick="resetAll()">重置</button>
-      <span id="statusText" class="status">按"下一步"推进碎片拼接</span>
-    </div>
+  <h2>Tool Call 碎片拼接模拟器</h2>
+  <div class="controls">
+    <button id="btnNext" onclick="nextStep()">下一步</button>
+    <button id="btnAuto" onclick="autoPlay()">自动播放</button>
+    <button onclick="resetAll()">重置</button>
+    <span class="status" id="statusText">模拟 Claude API 中 tool_use 的 input_json_delta 碎片拼接</span>
   </div>
   <div class="main">
-    <div class="panel" id="fragments">
-      <div class="panel-title">📨 到达的 JSON 碎片</div>
-      <div id="fragList"></div>
+    <div class="panel">
+      <div class="panel-title">原始 SSE 事件流</div>
+      <div id="eventList"></div>
     </div>
-    <div class="panel" id="accumulated">
-      <div class="panel-title">📦 累积缓冲区</div>
-      <div id="bufferArea"></div>
+    <div class="panel">
+      <div class="panel-title">碎片拼接过程</div>
+      <div class="buffer-section">
+        <div class="buffer-label">累积缓冲区</div>
+        <div class="buffer-content" id="bufferContent">（等待碎片到达）</div>
+      </div>
       <div id="parseStatus"></div>
       <div id="finalResult"></div>
     </div>
   </div>
-  <div class="step-info" id="stepInfo">碎片 0/4 — 工具: get_weather, 目标参数: {"city":"北京"}</div>
+  <div class="stats">
+    <span>步骤: <span class="stat-val" id="statStep">0/6</span></span>
+    <span>累积字节: <span class="stat-val" id="statBytes">0</span></span>
+    <span>可解析: <span class="stat-val" id="statParsable">否</span></span>
+  </div>
 </div>
 <script>
-const fragments = [
-  { frag: '{"ci', label: 'fragment 1' },
-  { frag: 'ty":"', label: 'fragment 2' },
-  { frag: '北京"', label: 'fragment 3' },
-  { frag: '}', label: 'fragment 4' }
+const steps = [
+  {
+    type: 'block-start',
+    event: 'content_block_start',
+    data: {type:'content_block_start',index:1,content_block:{type:'tool_use',id:'toolu_01A09q90qw90lq917835lq',name:'read_file',input:{}}},
+    fragment: null,
+    note: 'content_block_start: tool_use 块开始, input 是空对象 {}'
+  },
+  {
+    type: 'block-delta',
+    event: 'content_block_delta',
+    data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"file'}},
+    fragment: '{"file',
+    note: '第 1 片碎片: \'{"file\' — 不是合法 JSON'
+  },
+  {
+    type: 'block-delta',
+    event: 'content_block_delta',
+    data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'_path": "'}},
+    fragment: '_path": "',
+    note: '第 2 片碎片: \'_path": "\' — 拼起来还是不完整'
+  },
+  {
+    type: 'block-delta',
+    event: 'content_block_delta',
+    data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'src/uti'}},
+    fragment: 'src/uti',
+    note: '第 3 片碎片: \'src/uti\' — 字符串还没闭合'
+  },
+  {
+    type: 'block-delta',
+    event: 'content_block_delta',
+    data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'ls.ts"}'}},
+    fragment: 'ls.ts"}',
+    note: '第 4 片碎片: \'ls.ts"}\' — JSON 闭合了!'
+  },
+  {
+    type: 'block-stop',
+    event: 'content_block_stop',
+    data: {type:'content_block_stop',index:1},
+    fragment: null,
+    note: 'content_block_stop: 现在可以安全 JSON.parse() 了'
+  },
 ];
+
 let step = 0, accumulated = '', autoTimer = null;
-function initFrags() {
-  const list = document.getElementById('fragList');
-  list.innerHTML = '';
-  fragments.forEach((f,i) => {
-    const div = document.createElement('div');
-    div.className = 'frag-item frag-pending';
-    div.id = `frag-${i}`;
-    div.innerHTML = `<span style="color:#858585">${f.label}:</span> <span style="color:#ce9178">"${f.frag}"</span>`;
-    list.appendChild(div);
-  });
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function renderSSE(eventType, dataObj, cls) {
+  const block = document.createElement('div');
+  block.className = `sse-block ${cls}`;
+  const dataStr = JSON.stringify(dataObj);
+  block.innerHTML = `<span class="sse-key">event:</span> <span class="sse-val">${eventType}</span>\n<span class="sse-key">data:</span> <span class="sse-val">${escHtml(dataStr)}</span>`;
+  document.getElementById('eventList').appendChild(block);
+  block.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+
 function nextStep() {
-  if(step >= fragments.length) return;
-  // Mark current
-  const prev = step - 1;
-  if(prev >= 0) {
-    document.getElementById(`frag-${prev}`).className = 'frag-item frag-done';
+  if (step >= steps.length) return;
+  const s = steps[step];
+
+  renderSSE(s.event, s.data, s.type);
+
+  if (s.fragment) {
+    accumulated += s.fragment;
   }
-  const cur = document.getElementById(`frag-${step}`);
-  cur.className = 'frag-item frag-current';
-  // Accumulate
-  accumulated += fragments[step].frag;
-  // Update buffer
-  const buf = document.getElementById('bufferArea');
-  buf.innerHTML = `<div class="buffer-line">累积: <span class="buffer-accumulated">"${accumulated}"</span></div>`;
+
+  document.getElementById('bufferContent').textContent = accumulated || '（空）';
+  document.getElementById('statBytes').textContent = accumulated.length;
+
   // Try parse
   const ps = document.getElementById('parseStatus');
-  try {
-    const parsed = JSON.parse(accumulated);
-    ps.innerHTML = `<div class="parse-ok">✅ JSON.parse 成功!</div>`;
-  } catch(e) {
-    ps.innerHTML = `<div class="parse-fail">❌ JSON.parse 失败: ${e.message}</div>`;
+  if (accumulated) {
+    try {
+      const parsed = JSON.parse(accumulated);
+      ps.innerHTML = `<div class="parse-status parse-ok">✓ JSON.parse() 成功</div>`;
+      document.getElementById('statParsable').textContent = '是';
+
+      if (step === steps.length - 1) {
+        document.getElementById('finalResult').innerHTML = `
+          <div class="final-result">
+            <div class="final-title">拼接完成 — 可以执行工具了</div>
+            <div class="final-row">工具: <span>read_file</span></div>
+            <div class="final-row">tool_use_id: <span>toolu_01A09q90qw90lq917835lq</span></div>
+            <div class="final-row">参数: <span>${JSON.stringify(parsed)}</span></div>
+            <div class="final-row">file_path: <span>${parsed.file_path}</span></div>
+          </div>`;
+      }
+    } catch(e) {
+      ps.innerHTML = `<div class="parse-status parse-fail">✗ JSON.parse() 失败: ${e.message}</div>`;
+      document.getElementById('statParsable').textContent = '否';
+    }
   }
+
   step++;
-  cur.className = 'frag-item frag-done';
-  document.getElementById('stepInfo').textContent = `碎片 ${step}/${fragments.length} — 累积长度: ${accumulated.length} 字符`;
-  document.getElementById('statusText').textContent = `已收到碎片 ${step}/${fragments.length}`;
-  if(step >= fragments.length) {
-    const fr = document.getElementById('finalResult');
-    const parsed = JSON.parse(accumulated);
-    fr.innerHTML = `<div class="final"><div class="final-title">🎉 解析完成!</div>
-      <div>工具: <span style="color:#569cd6">get_weather</span></div>
-      <div>完整参数: <span style="color:#dcdcaa">${JSON.stringify(parsed)}</span></div>
-      <div>城市: <span style="color:#ce9178">${parsed.city}</span></div></div>`;
-    document.getElementById('statusText').textContent = '拼接完成！所有碎片已组装为合法 JSON';
+  document.getElementById('statStep').textContent = `${step}/${steps.length}`;
+  document.getElementById('statusText').textContent = s.note;
+
+  if (step >= steps.length) {
     document.getElementById('btnNext').disabled = true;
     document.getElementById('btnAuto').disabled = true;
   }
 }
+
 function autoPlay() {
-  if(autoTimer) { clearInterval(autoTimer); autoTimer = null; document.getElementById('btnAuto').textContent = '自动播放'; return; }
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; document.getElementById('btnAuto').textContent = '自动播放'; return; }
   document.getElementById('btnAuto').textContent = '暂停';
   document.getElementById('btnNext').disabled = true;
   autoTimer = setInterval(() => {
-    if(step >= fragments.length) { clearInterval(autoTimer); autoTimer = null; document.getElementById('btnAuto').textContent = '自动播放'; return; }
+    if (step >= steps.length) { clearInterval(autoTimer); autoTimer = null; return; }
     nextStep();
-  }, 800);
+  }, 900);
 }
+
 function resetAll() {
-  if(autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
   step = 0; accumulated = '';
-  document.getElementById('fragList').innerHTML = '';
-  document.getElementById('bufferArea').innerHTML = '';
+  document.getElementById('eventList').innerHTML = '';
+  document.getElementById('bufferContent').textContent = '（等待碎片到达）';
   document.getElementById('parseStatus').innerHTML = '';
   document.getElementById('finalResult').innerHTML = '';
-  document.getElementById('stepInfo').textContent = `碎片 0/${fragments.length} — 工具: get_weather, 目标参数: {"city":"北京"}`;
-  document.getElementById('statusText').textContent = '按"下一步"推进碎片拼接';
+  document.getElementById('statStep').textContent = '0/6';
+  document.getElementById('statBytes').textContent = '0';
+  document.getElementById('statParsable').textContent = '否';
+  document.getElementById('statusText').textContent = '模拟 Claude API 中 tool_use 的 input_json_delta 碎片拼接';
   document.getElementById('btnNext').disabled = false;
   document.getElementById('btnAuto').disabled = false;
   document.getElementById('btnAuto').textContent = '自动播放';
-  initFrags();
 }
-initFrags();
 </script>
 </body>
 </html>

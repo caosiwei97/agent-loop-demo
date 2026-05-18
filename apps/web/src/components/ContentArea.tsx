@@ -6,7 +6,6 @@ import {
   ApartmentOutlined,
   DesktopOutlined,
   BorderOutlined,
-  PartitionOutlined,
 } from '@ant-design/icons';
 import type { CaseData } from '../api';
 import CodeTab from '../tabs/CodeTab';
@@ -14,7 +13,6 @@ import ExcalidrawTab from '../tabs/ExcalidrawTab';
 import KnowledgeTab from '../tabs/KnowledgeTab';
 import DiagramTab from '../tabs/DiagramTab';
 import InteractiveTab from '../tabs/InteractiveTab';
-import MindmapTab from '../tabs/MindmapTab';
 
 interface ContentAreaProps {
   selectedCase: CaseData | null;
@@ -25,12 +23,11 @@ interface ContentAreaProps {
 }
 
 const TAB_DEFS = [
-  { id: 'code', label: '代码', icon: <CodeOutlined /> },
-  { id: 'excalidraw', label: '全景图', icon: <BorderOutlined /> },
   { id: 'knowledge', label: '知识点', icon: <ReadOutlined /> },
+  { id: 'excalidraw', label: '全景图', icon: <BorderOutlined /> },
   { id: 'diagram', label: '流程图', icon: <ApartmentOutlined /> },
   { id: 'interactive', label: '交互演示', icon: <DesktopOutlined /> },
-  { id: 'mindmap', label: '思维导图', icon: <PartitionOutlined /> },
+  { id: 'code', label: '代码', icon: <CodeOutlined /> },
 ];
 
 const OVERVIEW_CASE_ID = '__overview__';
@@ -49,14 +46,13 @@ export default function ContentArea({
     if (isOverview) {
       return TAB_DEFS.filter((t) => t.id === 'excalidraw');
     }
-    const content = selectedCase.content || {};
+    const content = selectedCase.content;
     return TAB_DEFS.filter((t) => {
       if (t.id === 'code') return true;
-      if (t.id === 'knowledge') return content.knowledge;
+      if (t.id === 'knowledge') return content.knowledge || content.mindmap;
       if (t.id === 'diagram') return content.diagram;
       if (t.id === 'interactive') return content.interactive;
       if (t.id === 'excalidraw') return content.excalidraw;
-      if (t.id === 'mindmap') return content.mindmap;
       return false;
     });
   }, [selectedCase, isOverview]);
@@ -86,10 +82,11 @@ export default function ContentArea({
           <CodeTab selectedCase={selectedCase} selectedFile={selectedFile} onSelectFile={onSelectFile} />
         )}
         {tab.id === 'excalidraw' && <ExcalidrawTab caseId={selectedCase.id} />}
-        {tab.id === 'knowledge' && !isOverview && <KnowledgeTab caseId={selectedCase.id} />}
+        {tab.id === 'knowledge' && !isOverview && (
+          <KnowledgeTab caseId={selectedCase.id} hasMindmap={!!selectedCase.content?.mindmap} />
+        )}
         {tab.id === 'diagram' && !isOverview && <DiagramTab caseId={selectedCase.id} />}
         {tab.id === 'interactive' && !isOverview && <InteractiveTab caseId={selectedCase.id} />}
-        {tab.id === 'mindmap' && !isOverview && <MindmapTab caseId={selectedCase.id} />}
       </div>
     ),
   }));

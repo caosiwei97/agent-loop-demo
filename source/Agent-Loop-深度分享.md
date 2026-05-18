@@ -29,7 +29,7 @@ Observation: 完成                                ← 必须等结果回来
 
 这段体验的差距，不是模型能力的差距——是 Agent Loop 架构的差距。`ReAct` 是"想一步、做一步、等一步"；而如今的 Agent Loop 是"边想边做、该等的等、不该等的不等"。差距怎么产生的？靠的是三个核心机制：
 
-![Agent Loop 三大核心机制](assets/overview.excalidraw)
+Agent Loop 三大核心机制
 
 1. **流式响应**——怎么让模型和工具"边说边干"？
 2. **容错机制**——`API` 挂了怎么办？
@@ -41,15 +41,19 @@ Agent Loop 不只是"循环调模型"——它要管模型和工具怎么协作�
 
 ## 一、流式响应的工程真相
 
+"边想边做"听起来简单，但具体怎么实现？我们从最底层的传输协议开始，一层层往上搭。
+
 ### 为什么是 `SSE`，不是 `WebSocket`？
 
-所有主流 LLM `API` 都用 `SSE` 做流式响应，原因很直接：LLM 流式输出就是服务器往客户端推 `token`，客户端只需要听。**单向推送，`SSE` 天然适合。**
+> SSE：Server-Sent Events（服务端推送事件）。
 
-`WebSocket` 是双向管道，对 LLM 场景来说属于杀鸡用牛刀。而且 `SSE` 有几个实在的好处：跑在标准 `HTTP` 上不需要协议升级，自带 `Last-Event-ID` 重连机制，每次请求都可以验证身份。`SSE` 格式也朴素——`event:` 标类型，`data:` 放 `JSON`，空行结束。
+所有主流 LLM `API` 都用 `SSE` 做流式响应，原因很直接：LLM 流式输出就是服务器往客户端推 `token`，客户端只需要听。**单向推送，**`SSE` **天然适合。**
 
-### 模型流式输出的时候，你收到的到底是什么？
+`WebSocket` 是双向管道，对 LLM 场景来说属于杀鸡用牛刀。而且 `SSE` 有几个实在的好处：跑在标准 `HTTP` 上不需要协议升级，自带 `Last-Event-ID` 重连机制，每次请求都可以验证身份。还有一个常被忽视的安全优势：`WebSocket` 的认证只发生在握手阶段，一旦 `HTTP Upgrade` 完成，后续数据帧的收发不再经过 `HTTP` 认证层——权限失效（比如过期）后 `WebSocket` 连接照样存活、数据照样流通。`SSE` 没这个问题，每次请求都是独立的 `HTTP` 请求，`Authorization Header` 每次都校验，认证粒度是"每次请求"而不是"每次连接"。
 
-以 Anthropic 的 `API` 为例，一次完整的流式响应，事件流长这样：
+`SSE` 返回的数据格式（以 Anthropic 为例）也简单：
+
+`event:` 标类型，`data:` 放 `JSON`，空行结束。以 Anthropic 的 `API` 为例，一次完整的流式响应，事件流长这样：
 
 ```
 1. message_start        → 一条新消息开始了
@@ -63,11 +67,9 @@ Agent Loop 不只是"循环调模型"——它要管模型和工具怎么协作�
 
 如果模型只是回复一段文字，把 delta 里的文本拼起来渲染就完事——你在 ChatGPT 或 Claude 网页版看到的"打字机效果"就是这个原理。
 
-**但 Agent 不只是吐文字——Agent 要调工具。**
+但 Agent 不只是吐文字——Agent 要调工具。工具调用的参数是结构化的 `JSON`，而 `SSE` 推过来的是一个个 `token` 碎片。文本碎片拼错了顶多显示乱码，`JSON` 碎片拼错了直接解析失败——工具根本没法执行。所以，流式架构要落地到 Agent 上，第一个要解决的问题就是：**怎么从 `token` 碎片里拼出完整的工具调用？**
 
 ### Tool Call 的流式解析：拼碎片
-
-这是流式架构里最有意思的部分。
 
 模型决定调用工具时，会输出一个 `tool_use` 类型的内容块。但模型是自回归生成的，一个 `token` 一个 `token` 蹦，所以你收到的不是完整 `JSON`，而是一堆碎片：
 
@@ -82,13 +84,15 @@ content_block_delta → partial_json: 'ls.ts"}'
 content_block_stop  → （结束）
 ```
 
-`content_block_start` 时 `input` 是空对象，真正的参数通过后续 delta 一片一片推过来。`'{"file*'` 算什么 `JSON`？什么都不算。必须等 `content_block_stop` 后把碎片拼成完整的 `{"file_path": "src/utils.ts"}`，才能 `JSON.parse()`。
+`content_block_start` 时 `input` 是空对象，真正的参数通过后续 delta 一片一片推过来，等 `content_block_stop` 后把碎片拼成完整的 `{"file_path": "src/utils.ts"}`，才能 `JSON.parse()`。
 
-**过早解析 = 崩溃。**
+**所以，过早解析 = 崩溃。**
+
+好，碎片拼接的问题解决了——我们能从流里准确识别出完整的工具调用。但解析只是第一步。解析完了，下一个问题马上来了：**什么时候执行这个工具？**
 
 ### "边说边执行"
 
-最简单的做法：等整条消息说完再依次执行工具。早期 Agent 大多这么干，逻辑简单不易出错。但生产级 Agent 会做一个关键优化：**工具块一完成就立刻开始执行，不等整条消息说完。**
+最简单的做法：等整条消息说完再依次执行工具。早期 Agent 大多这么干，逻辑简单不易出错。但这么做等于把流式的优势全丢了——模型还在生成后面的内容，前面已经解析好的工具调用却干等着。现在主流的 Agent 都在做一个关键优化：**工具块一完成就立刻开始执行，不等整条消息说完。**
 
 假设模型一次回复要做三件事：输出文字、`Read` 文件 A、`Read` 文件 B、`Read` 文件 C。
 
@@ -119,21 +123,27 @@ sequenceDiagram
     M->>A: 分析结果，输出总结
 ```
 
+
+
 工具执行和后续调用的生成在时间上**重叠**。读 5 个文件的任务，感知延迟能减 30-50%。
 
-但不是所有工具都能并行——有些之间有依赖关系，比如先 `Read` 才能 `Edit`。所以需要并发安全判断。
+"边说边执行"让事情快了，但也引入了新麻烦：多个工具同时在跑，如果其中一个在写文件，另一个也在写同一个文件呢？不是所有工具都能并行——有些之间有依赖关系，比如先 `Read` 才能 `Edit`。所以"边说边执行"不能无脑并发，需要一套安全判断。
 
 #### 并发安全判断
 
-| 工具类型 | 并发策略 | 原因 |
-|---------|---------|------|
-| `Read` / `Glob` / `Grep` | 可并发 | 只读不写 |
-| `Edit` | **独占执行** | 写操作，等所有并发工具完成后再执行 |
-| `Bash` | 看具体命令 | `ls` 安全，`npm install` 不安全 |
+
+| 工具类型                     | 并发策略     | 原因                        |
+| ------------------------ | -------- | ------------------------- |
+| `Read` / `Glob` / `Grep` | 可并发      | 只读不写                      |
+| `Edit`                   | **独占执行** | 写操作，等所有并发工具完成后再执行         |
+| `Bash`                   | 看具体命令    | `ls` 安全，`npm install` 不安全 |
+
 
 这个判断不是按工具类型写死的，而是根据具体输入来决定。同一个 `Bash` 工具，`cat README.md` 可以并发，`rm -rf node_modules` 不行。
 
 **能并发的尽量并发，不能并发的坚决串行。**
+
+并发带来了速度，但也带来了两个工程问题：结果的顺序怎么办？一个工具失败了，依赖它的后续工具怎么办？
 
 #### 结果按调用顺序返回
 
@@ -146,6 +156,8 @@ sequenceDiagram
 模型同时调了 `mkdir -p src/components`、`touch src/components/Button.tsx`、`Read package.json`。如果 mkdir 失败，touch 也被取消（依赖 mkdir 创建的目录），但 `Read` 不受影响。
 
 只有 `Bash` 的错误会级联——shell 命令之间常有依赖链（`mkdir → cd → 创建文件`），而读文件、搜索这类操作通常是独立的。
+
+到这里，流式解析、并发执行、安全调度都搞定了。但还有一个场景没覆盖：Agent 不是所有工具都自动跑的——有些操作（比如改文件、跑 shell 命令）需要用户点头才能执行。这就需要"暂停"能力。而 `SSE` 是单向推送，怎么做交互式的"暂停-确认-继续"？
 
 ### 工具审批：两次 `SSE` 流之间的空隙
 
@@ -182,11 +194,15 @@ sequenceDiagram
     end
 ```
 
+
+
 `SSE` 推数据，`HTTP` `POST` 回传数据——两个单向通道叠起来就是双向通信。从头到尾不需要 `WebSocket`。
 
 `CLI` 场景更简单：工具在本地执行，审批就是读一个键盘输入，连 `HTTP` 请求都不需要。
 
 审批是低频事件——一个会话里可能 80% 的工具调用都自动放行。如果模型一次返回多个工具调用，不需要审批的先并发执行，需要审批的排队等用户逐个确认。
+
+到这里，流式架构的核心链路讲完了：碎片解析 → 边说边执行 → 并发安全 → 审批机制。剩下两个补充话题——文本怎么推给用户不闪烁，以及不同 Provider 的协议怎么统一。
 
 ### 流式文本分段推送
 
@@ -197,7 +213,7 @@ sequenceDiagram
 如果你的 Agent 要支持多个模型提供商，各家的流式协议不一样：
 
 - **Anthropic**：带 `event:` 类型，`input_json_delta` 推 `JSON` 碎片，`message_stop` 结束
-- **OpenAI**：无 `event:` 行，从 `JSON` 判断类型，`data: [DONE]` 结束
+- **OpenAI**：以 Chat Completions API 为例，无 `event:` 行，从 `JSON` 判断类型，`data: [DONE]` 结束（新的 Responses API 事件结构有变化）
 - **Google Gemini**：数据块更大，带额外信息
 
 本质上都是 `JSON` 碎片拼接，但字段路径和事件结构不同。`OpenClaw` 和 `Vercel AI SDK` 都在做同一件事——对每个提供商写流适配器，统一内部格式。
@@ -206,15 +222,21 @@ sequenceDiagram
 
 ## 二、`API` 挂了怎么办
 
+前面讲的所有东西——碎片拼接、边说边执行、并发调度——都建立在一个前提上：`**SSE` 连接活着，数据在正常流动。**
+
+但现实世界里，连接会断、服务会过载、密钥会过期。流式架构越快，对连接稳定性的依赖就越强——同步请求挂了大不了重发一次，流式连接挂在中间，手里还有半成品数据，处理起来复杂得多。所以，光有流式架构不够，还得有一套容错机制来兜底。
+
 ### 错误先分类，再决定怎么处理
 
 不是所有错误都值得重试。`429` 限流等一等就好，`401` 密钥过期等多久都没用。
 
-| 类型 | 状态码 | 怎么办 |
-|------|--------|--------|
-| **可重试** | `429`、`529`/`503`、`408`、`ECONNRESET` | 指数退避重试 |
-| **不可重试** | `400`、`401`/`403`、`402` | 直接报错 |
-| **需要降级** | 连续多次 `529`、流式反复断开 | 换策略 |
+
+| 类型       | 状态码                                  | 怎么办    |
+| -------- | ------------------------------------ | ------ |
+| **可重试**  | `429`、`529`/`503`、`408`、`ECONNRESET` | 指数退避重试 |
+| **不可重试** | `400`、`401`/`403`、`402`              | 直接报错   |
+| **需要降级** | 连续多次 `529`、流式反复断开                    | 换策略    |
+
 
 最差的做法：不分青红皂白 `while + sleep`。`429` 越重试越限流，`401` 重试到天荒地老也没用。
 
@@ -252,6 +274,8 @@ async function retryWithBackoff(fn, maxRetries = 10) {
   }
 }
 ```
+
+指数退避 + 抖动能处理绝大多数"服务端明确告诉你出错了"的情况。但有一类故障更阴险——服务端**没有**告诉你出错了。
 
 ### 沉默的杀手：`SSE` 连接卡住
 
@@ -292,21 +316,27 @@ clearInterval(timer);
 
 心跳保活、超时检测、对账恢复——三个环节缺一不可。没有心跳，超时检测会在正常的长耗时操作中误判；没有超时检测，半开连接会让用户永久卡住；没有对账，恢复时可能产生重复数据。
 
+好，现在我们能检测到连接中断了，也知道怎么恢复了。但还有一个细节问题：中断发生时，客户端手里已经收到了一部分数据——这些半成品是扔掉还是留着？
+
 ### 流式中断后，已接收的内容怎么处理？
 
 连接推了一部分就断了，手里有半成品。处理原则按完整性区分：
 
-| 内容状态 | 处理方式 |
-|---------|---------|
+
+| 内容状态                | 处理方式     |
+| ------------------- | -------- |
 | 完整的工具调用（`JSON` 已闭合） | 保留，可正常执行 |
-| 不完整的工具调用 | 丢弃，无法解析 |
-| 已显示给用户的文本 | 保留，删掉更困惑 |
+| 不完整的工具调用            | 丢弃，无法解析  |
+| 已显示给用户的文本           | 保留，删掉更困惑 |
+
 
 重试前需要对已执行的工具调用做去重，避免重试时执行两次。
 
 ### 三层降级链
 
-光有重试不够。Agent 的容错是分层的——每一层处理不同级别的故障，内层解决不了的才升级到外层。
+到目前为止，我们有了单次请求的重试策略（指数退避），也有了沉默故障的检测手段（心跳 + 超时）。但如果问题不是偶发的呢？如果流式连接反复断开，退避 10 次都没用呢？
+
+光有重试不够。重试解决的是"偶尔失败"，面对"持续失败"需要换一种打法。Agent 的容错是分层的——每一层处理不同级别的故障，内层解决不了的才升级到外层。
 
 ```mermaid
 graph TB
@@ -334,6 +364,8 @@ graph TB
     style L3 fill:#ffc9c9,stroke:#ef4444
 ```
 
+
+
 偶发的网络错误靠重试消化，持续的流式故障靠协议降级应对，模型级别的过载靠模型切换兜底。
 
 流式失败转非流式为什么有效？流式需要维持长连接，对服务端连接池和内存压力更大。切换到非流式变成一次性请求-响应，对服务端更友好。
@@ -343,6 +375,8 @@ graph TB
 Claude Code 有个细节：流式转非流式时会把已积累的 `529` 次数传过去，两层的失败预算是连续的，不是各算各的。
 
 ### 多 Provider 容灾
+
+三层降级链是在**同一个 Provider 内部**做文章——流式换非流式、大模型换小模型。但如果整个 Provider 都挂了呢？Anthropic 全线过载，Opus 和 Sonnet 都不行。这时候就需要跨 Provider 的容灾了。
 
 如果你的产品同时接了多家 `API` 提供商，回旋空间就大多了。`OpenClaw` 支持 Anthropic、OpenAI、Google、本地 Ollama 等，几个工程决策值得注意。
 
@@ -364,6 +398,8 @@ graph LR
     style F fill:#ffd8a8,stroke:#f59e0b
 ```
 
+
+
 Sonnet 4.6 限流了，先试同 Provider 的 Sonnet 4.5 或 Haiku。`API` 速率限制通常按模型区分，Sonnet 4.6 满了不代表 Haiku 也满了。兄弟模型切换成本远低于跨 Provider——消息格式一致，上下文不需要转换。
 
 但只有 `rate_limit` 和 `overloaded` 才值得走兄弟模型。`billing` 和 `auth` 是 Provider 级别的问题，同一家的其他模型也一样不可用。
@@ -372,7 +408,11 @@ Sonnet 4.6 限流了，先试同 Provider 的 Sonnet 4.5 或 Haiku。`API` 速�
 
 ## 三、Agent 自己失控了怎么办
 
-`API` 没挂，但 Agent 自己出问题了。最常见的三种：**死循环、`Token` 烧穿、输出截断。**
+前面两节解决的都是"外部问题"——网络断了、服务挂了、限流了。我们重试、降级、切 Provider，总能让 Agent 继续跑下去。
+
+但有一类故障不是外部的：`**API` 活得好好的，连接也没问题，Agent 自己跑飞了。**
+
+最常见的三种：死循环、`Token` 烧穿、输出截断。它们之间有因果链——死循环会导致 `Token` 烧穿，`Token` 用太多会触发输出截断。但它们也可以独立发生，所以需要三根独立的保险丝分别防护。
 
 假设你让 Agent 把所有 `console.log` 替换成 `logger.info`。它改完一个文件后，发现"还有 console.log"（因为 `logger.info` 这个字符串恰好包含 `log`），于是又改了一遍，然后又读了一遍，又改了一遍……15 分钟后跑了 200 轮，烧了 $50 `Token`，文件面目全非。
 
@@ -405,12 +445,14 @@ function fingerprint(name, params) {
 
 #### 四种检测器
 
-| 检测器 | 抓什么 | 怎么判 |
-|--------|-------|--------|
-| **通用重复检测** | 同一工具 + 同一参数反复调用 | 超 10 次告警（不阻断，可能合法） |
-| **无进展轮询** | 轮询类工具反复查，结果不变 | 参数一样 + 结果也一样 |
-| **Ping-Pong** | 两工具交替调用（A→B→A→B） | 双方结果都没变化 |
-| **全局熔断** | 任何形式的累计无进展 | 30 次无进展，强制停止 |
+
+| 检测器           | 抓什么              | 怎么判                |
+| ------------- | ---------------- | ------------------ |
+| **通用重复检测**    | 同一工具 + 同一参数反复调用  | 超 10 次告警（不阻断，可能合法） |
+| **无进展轮询**     | 轮询类工具反复查，结果不变    | 参数一样 + 结果也一样       |
+| **Ping-Pong** | 两工具交替调用（A→B→A→B） | 双方结果都没变化           |
+| **全局熔断**      | 任何形式的累计无进展       | 30 次无进展，强制停止       |
+
 
 通用重复检测只告警不阻断——`read_file` 被相同参数调多次可能只是 Agent 在不同推理步骤重新读取，属于合法场景。所以这个检测器的定位是"提醒"，不是"执法"。
 
@@ -432,7 +474,9 @@ Break（30 次）→ 全局熔断，强制停止
 
 ### 保险丝 2：`Token` 预算控制
 
-死循环检测管工具层面的重复，但模型无限续写不涉及重复工具调用——Agent 生成了 2000 字还没停，上下文越塞越满。
+死循环检测能拦住"同一个工具反复调用"的情况。但 Agent 失控不一定表现为工具重复——模型也会无限续写文本。它没调任何工具，就是在生成、生成、再生成，上下文越塞越满，每一轮的输入 `Token` 越来越贵。死循环检测完全不会触发，因为根本没有重复的工具调用。
+
+这需要另一根保险丝：不看行为模式，直接看资源消耗。
 
 Claude Code 的做法是设输出 `Token` 预算（比如 30000），做两件事：
 
@@ -455,43 +499,48 @@ Claude Code 的做法是设输出 `Token` 预算（比如 30000），做两件�
 
 ### 保险丝 3：输出截断恢复
 
-每个模型有 `max_output_tokens` 限制（Claude 默认 8192）。超过就硬截断。问题是**模型不知道自己被截了**——生成确实停止了，它以为自己说完了。
+`Token` 预算是从客户端侧控制"别花太多"。但还有一个限制不在客户端手上——模型本身有 `max_output_tokens` 上限（比如 16K）。超过就强制截断，不管你内容写到哪了。
+
+预算控制管的是"累计消耗"，截断恢复管的是"单次输出太长"。两个问题看着像但机制完全不同：预算超了可以优雅停止，截断是模型被强行掐断——它自己都不知道被截了，以为自己说完了。
 
 如果截断发生在工具调用 `JSON` 中间 → `JSON` 不完整 → 解析失败 → Agent 不知道该干什么。
 
 Claude Code 分三步递进恢复：
 
-1. **提高上限**：8K → 64K。静默重试，用户无感。很多时候只是碰巧输出多了一点，提高上限就行。
+1. **提高上限**：比如从 16K 拉到 64K。静默重试，用户无感。很多时候只是碰巧输出多了一点，提高上限就行。
 2. **注入恢复消息**（最多 3 次）：
-   - 第一次："直接从断点继续——不要道歉，不要回顾。把剩余工作拆成更小的块。"
-   - 后续："再次被截断。大幅精简，只列关键结论。"
-   
+  - 第一次："直接从断点继续——不要道歉，不要回顾。把剩余工作拆成更小的块。"
+  - 后续："再次被截断。大幅精简，只列关键结论。"
    "不要道歉"——模型第一反应是"抱歉回复被截了"，浪费 `Token`。"不要回顾"——模型第二反应是把前面复述一遍，也浪费 `Token`。
-3. **认栽**：3 次都不行 → 返回不完整结果，标记"输出被截断"。64K 限制下连续 3 次说不完，说明任务拆分有问题，人工介入比自动重试更有效。
+3. **认栽**：3 次都不行 → 返回不完整结果，标记"输出被截断"。64K 上限下连续 3 次说不完，说明任务拆分有问题，人工介入比自动重试更有效。
 
 ### Agent 什么时候该停？七种退出路径
 
-生产级 Agent 至少有七种退出方式：
+三根保险丝各管各的危险场景，但它们最终都指向同一个问题：**Agent 应该怎么停下来？**
 
-| 退出方式 | 触发条件 | 用户看到 |
-|---------|-----------|---------|
-| `completed` | `end_turn` | ✅ 完成 |
-| `max_turns` | 跑满上限 | ⚠️ 轮次上限 |
-| `aborted_streaming` | 用户按 Esc（模型输出时） | 🛑 中断，保留已收到文本 |
-| `aborted_tools` | 用户按 Esc（工具执行时） | 🛑 中断，等正在跑的工具完成 |
-| `hook_stopped` | 自定义 Hook 阻止 | 🚫 Hook 阻止 |
-| `blocking_limit` | 上下文快满，发请求前拦截 | ⚠️ 上下文接近上限 |
-| `prompt_too_long` | `API` 返回 `413` | ❌ 输入过长 |
+正常完成要停，死循环要停，Token 烧完要停，截断恢复失败也要停。再加上用户主动中断、上下文满了、输入太长——总共有七种退出方式，每种对应不同的善后处理：
+
+
+| 退出方式                | 触发条件           | 用户看到            |
+| ------------------- | -------------- | --------------- |
+| `completed`         | `end_turn`     | ✅ 完成            |
+| `max_turns`         | 跑满上限           | ⚠️ 轮次上限         |
+| `aborted_streaming` | 用户按 Esc（模型输出时） | 🛑 中断，保留已收到文本   |
+| `aborted_tools`     | 用户按 Esc（工具执行时） | 🛑 中断，等正在跑的工具完成 |
+| `hook_stopped`      | 自定义 Hook 阻止    | 🚫 Hook 阻止      |
+| `blocking_limit`    | 上下文快满，发请求前拦截   | ⚠️ 上下文接近上限      |
+| `prompt_too_long`   | `API` 返回 `413` | ❌ 输入过长          |
+
 
 几个值得细说的：
 
-**`max_turns` 的检查时机**发生在工具执行完成后、下一轮 `API` 调用前。这意味着最后一轮的工具会执行完，不会"差一步被硬停"。这个上限既防死循环也控成本——20 轮还没完，说明任务可能需要拆分。
+`max_turns` **的检查时机**发生在工具执行完成后、下一轮 `API` 调用前。这意味着最后一轮的工具会执行完，不会"差一步被硬停"。这个上限既防死循环也控成本——20 轮还没完，说明任务可能需要拆分。
 
-**`aborted_tools` 比 `aborted_streaming` 复杂**——已启动的工具可能还在后台跑（比如编译进程），需要等它完成或超时后再退出。
+`aborted_tools` **比** `aborted_streaming` **复杂**——已启动的工具可能还在后台跑（比如编译进程），需要等它完成或超时后再退出。
 
-**`hook_stopped` 允许自定义拦截**——用户可以设置 Hook："每次 Agent 想执行工具的时候，先跑一下我的检查脚本"。典型场景：CI 环境里 Hook 检查代码是否通过 lint，不通过就阻止 Agent 继续。
+`hook_stopped` **允许自定义拦截**——用户可以设置 Hook："每次 Agent 想执行工具的时候，先跑一下我的检查脚本"。典型场景：CI 环境里 Hook 检查代码是否通过 lint，不通过就阻止 Agent 继续。
 
-**`blocking_limit` 和 `prompt_too_long` 是一对配合机制**：`blocking_limit` 是客户端**预检**（上下文超过窗口 - 3000 `Token` 就不发请求，避免用户白等网络往返，还可能被计费），`prompt_too_long` 是预检漏掉后的**恢复**（`API` 返回 `413` 后先做两轮自救：轻量的 `Context Collapse` 把已执行完的工具结果压缩掉，重量级的 `Reactive Compact` 调用模型对早期对话历史做摘要——把几千 `token` 的详细记录缩成几百 `token`。两轮都试过还是太长才真正退出）。
+`blocking_limit` **和** `prompt_too_long` **是一对配合机制**：`blocking_limit` 是客户端**预检**（上下文超过窗口 - 3000 `Token` 就不发请求，避免用户白等网络往返，还可能被计费），`prompt_too_long` 是预检漏掉后的**恢复**（`API` 返回 `413` 后先做两轮自救：轻量的 `Context Collapse` 把已执行完的工具结果压缩掉，重量级的 `Reactive Compact` 调用模型对早期对话历史做摘要——把几千 `token` 的详细记录缩成几百 `token`。两轮都试过还是太长才真正退出）。
 
 不管哪种退出，都得告诉用户三件事：**停了、为什么停了、能做什么。** 没有 context 的"已停止"是用户体验灾难——用户不知道之前的工作有没有保存，不知道下一步该怎么办。
 
@@ -527,21 +576,23 @@ graph TB
     style DONE fill:#b2f2bb,stroke:#22c55e
 ```
 
+
+
 它们在 Agent Loop 的不同阶段分别守护不同风险，谁也不碍谁，加在一起就是一张网。就像大楼的消防系统：烟雾报警器、喷淋、防火门、消防栓——各管各的，但一起确保不管哪里出问题都有人管。
 
 ---
 
 ## 总结
 
-三个话题一条线：**从"Agent 怎么跑起来"到"Agent 怎么跑得稳"。**
+回头看，三个话题形成一条递进链：
 
-流式架构管体验——`SSE` 单向推送、`JSON` 碎片拼装、边说边执行、读操作并发写操作串行、审批靠两次 `SSE` 流之间的空隙。你感受的"快"和"卡"，差异全在这。
+**流式架构让 Agent 快起来**——`SSE` 推 `token` 碎片，碎片拼成工具调用，工具调用边解析边执行，读操作并发写操作串行，审批塞在两次流之间的空隙里。这解决了"Agent 怎么跑起来不卡"。
 
-容错管命——错误先分类再处理、指数退避加抖动防重试风暴、三层降级链从流式退到非流式再换模型、沉默故障靠心跳 + 超时检测 + 对账恢复。多 Provider 时兄弟模型 `Failover` 比跨 Provider 切换划算。
+**但快了之后，连接断了怎么办？** 容错接手——错误先分类，可重试的走指数退避加抖动，沉默故障靠心跳检测，单次重试不够就升级到三层降级链（流式 → 非流式 → 换模型），单个 Provider 不够就跨 Provider 容灾。这解决了"外部环境出问题时 Agent 怎么活下来"。
 
-保险丝管 Agent 自身——死循环靠哈希指纹加四种检测器、`Token` 预算靠 90% nudge 加递减回报、截断靠渐进式恢复指令。这些东西全在代码里硬编码，不是靠 `prompt` 告诉模型"请不要循环"。
+**但外部问题都兜住了，Agent 自己跑飞了怎么办？** 三根保险丝接手——死循环检测拦住工具层面的原地踏步，`Token` 预算控制拦住无限续写的资源消耗，截断恢复处理硬上限导致的输出中断。这些全在代码里硬编码，不是靠 `prompt` 告诉模型"请不要循环"。
 
-**模型是大脑，`Harness` 是身体。没有 `Harness` 的模型看起来能动，遇到真实压力就散架。**
+**模型是大脑，**`Harness` **是身体。** 没有 `Harness` 的模型看起来能动，遇到真实压力就散架。
 
 ---
 
@@ -626,14 +677,8 @@ while (turn < MAX_TURNS) {
 ### 讨论
 
 1. 如果你要**同时让 10 个 Agent 干 10 件不同的事**——一个写代码，一个跑测试，一个查文档，一个做 code review——你怎么管理它们？怎么让它们不互相打架？一个挂了怎么不影响其他？
-
 2. 这些容错和保险丝机制，应该由**框架**来做（比如 `OpenClaw`、`LangGraph`），还是由**开发者**自己在业务层做？各自的优势和风险是什么？
-
 3. 今天讲的"保险丝"都是**反应式**的——出了问题才处理。有没有可能做到**预防式**的——在问题还没发生的时候就预判到？比如通过分析 Agent 的行为模式提前干预。
-
----
-
-> **下期预告**：Agent 的发动机——`LLM`，你知道多少？后续分享将围绕今天提到的六大支柱（Agent Loop、Tool System、Context Engineering、Memory、Multi-Agent、Harness Engineering）逐一深入。
 
 ---
 
@@ -644,63 +689,38 @@ while (turn < MAX_TURNS) {
 ### Agent Loop 架构
 
 - **Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems** — Jiacheng Liu et al., 2026. 对 Claude Code 源码（v2.1.88, ~512K 行 `TypeScript`）的系统级架构分析，并与 `OpenClaw` 做了对比。文中关于 Agent Loop、工具并发调度、五层压缩管线、七种退出路径的分析是本文的主要知识来源。
-  - 论文：https://arxiv.org/abs/2604.14228
-  - GitHub：https://github.com/VILA-Lab/Dive-into-Claude-Code
-
+  - 论文：[https://arxiv.org/abs/2604.14228](https://arxiv.org/abs/2604.14228)
+  - GitHub：[https://github.com/VILA-Lab/Dive-into-Claude-Code](https://github.com/VILA-Lab/Dive-into-Claude-Code)
 - **How Claude Code Works** — Anthropic 官方文档。描述了 Agent Loop 的三个阶段（收集上下文 → 执行操作 → 验证结果）和工具分类体系。
-  - https://code.claude.com/docs/en/how-claude-code-works.md
-
+  - [https://code.claude.com/docs/en/how-claude-code-works.md](https://code.claude.com/docs/en/how-claude-code-works.md)
 - **How the agent loop works** — Claude Code Agent SDK 文档。详细描述了消息生命周期、工具执行（读操作并发、写操作串行）、上下文压缩和流式响应机制。
-  - https://code.claude.com/docs/en/agent-sdk/agent-loop
-
+  - [https://code.claude.com/docs/en/agent-sdk/agent-loop](https://code.claude.com/docs/en/agent-sdk/agent-loop)
 - **Ch 5. The Agent Loop | Claude Code from Source** — 对 Claude Code 核心 `query.ts`（1,730 行）的逐行解读，涵盖 StreamingToolExecutor、并发安全分类、错误恢复、`Token` 预算和退出路径。
-  - https://claude-code-from-source.com/ch05-agent-loop/
-
+  - [https://claude-code-from-source.com/ch05-agent-loop/](https://claude-code-from-source.com/ch05-agent-loop/)
 - **Claude Code Agent Loop: Dissecting the Heart of an AI Coding Assistant** — Vincent Qiao, 2026. 对 Agent Loop 的 `while(true)` 结构、流式工具执行、五层压缩、七种恢复路径的源码级分析。
-  - https://blog.vincentqiao.com/en/posts/claude-code-agent-loop/
+  - [https://blog.vincentqiao.com/en/posts/claude-code-agent-loop/](https://blog.vincentqiao.com/en/posts/claude-code-agent-loop/)
 
 ### `ReAct` 模式
 
 - **ReAct: Synergizing Reasoning and Acting in Language Models** — Shunyu Yao et al., 2022 (ICLR 2023). 提出 `ReAct` 范式的原始论文。
-  - 论文：https://arxiv.org/abs/2210.03629
+  - 论文：[https://arxiv.org/abs/2210.03629](https://arxiv.org/abs/2210.03629)
 
 ### 流式响应与 `SSE`
 
 - **Anthropic API: Streaming** — Anthropic 官方 `API` 文档。定义了 `SSE` 事件流格式和 `tool_use` 的流式 `JSON` 碎片拼接。
-  - https://docs.anthropic.com/en/api/streaming
-
+  - [https://docs.anthropic.com/en/api/streaming](https://docs.anthropic.com/en/api/streaming)
 - **OpenAI API: Streaming** — OpenAI 官方 `API` 文档。描述了 `data: [DONE]` 结束标记和 `tool_calls` 的增量 `JSON` 流式传输。
-  - https://platform.openai.com/docs/api-reference/streaming
-
+  - [https://platform.openai.com/docs/api-reference/streaming](https://platform.openai.com/docs/api-reference/streaming)
 - **Vercel AI SDK** — 抹平不同 Provider 流式协议差异的 `SDK`。
-  - https://sdk.vercel.ai/docs
+  - [https://sdk.vercel.ai/docs](https://sdk.vercel.ai/docs)
 
 ### 容错机制
 
 - **Exponential Backoff And Jitter** — AWS Architecture Blog, 2015. 解释了为什么固定间隔重试会导致"重试风暴"，以及三种抖动策略的对比。
-  - https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
-
-- **Timeouts, retries, and backoff with jitter** — Amazon Builders' Library. 从分布式系统角度解释重试、退避和抖动的工程实践。
-  - https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/
+  - [https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
 
 ### `OpenClaw` 项目
 
-- **OpenClaw Documentation: Pi Integration Architecture** — `OpenClaw` 如何嵌入 pi-coding-agent `SDK`，包括流式事件订阅、工具替换和分段推送。
-  - https://documentation.openclaw.ai/pi
+- **OpenClaw Documentation: Agent Loop** — `OpenClaw` 的 Agent Loop 生命周期、死循环检测和哈希指纹机制。
+  - [https://openclaws.io/docs/concepts/agent-loop](https://openclaws.io/docs/concepts/agent-loop)
 
-- **OpenClaw Documentation: Agent Loop** — `OpenClaw` 的 Agent Loop 生命周期、序列化运行和事件流。
-  - https://openclaws.io/docs/concepts/agent-loop
-
-- **OpenClaw GitHub** — 开源多通道 AI Agent 网关项目。
-  - https://github.com/openclaw/openclaw
-
-### 综合参考
-
-- **Introducing advanced tool use on the Claude Developer Platform** — Anthropic Engineering Blog, 2025. 介绍了 `Tool Search Tool`、`Programmatic Tool Calling` 等高级工具使用模式。
-  - https://www.anthropic.com/engineering/advanced-tool-use
-
-- **Claude Code: Behind-the-Scenes of the Master Agent Loop** — Agents Design. 从架构角度拆解 Claude Code 的单线程 master loop 设计。
-  - https://agentsdesign.dev/article/claude-code-master-agent-loop/
-
-- **Agent Loop Architecture | ClaudePedia** — Agent Loop 的通用架构描述，包括 `async generator` 模式、取消处理、`streaming event` 类型系统。
-  - https://claudepedia.dev/docs/agent-loop

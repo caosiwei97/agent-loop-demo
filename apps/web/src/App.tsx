@@ -14,7 +14,7 @@ export default function App() {
   const [cases, setCases] = useState<CaseData[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseData | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('code');
+  const [activeTab, setActiveTab] = useState('knowledge');
 
   const overviewCase = useMemo<CaseData>(() => ({
     id: OVERVIEW_CASE_ID,
@@ -43,7 +43,7 @@ export default function App() {
       if (!c) return;
       setSelectedCase(c);
       setSelectedFile(`cases/${c.id}/${c.entryFile}`);
-      const defaultTab = c.content?.excalidraw ? 'excalidraw' : 'code';
+      const defaultTab = c.content?.excalidraw ? 'excalidraw' : 'knowledge';
       setActiveTab(defaultTab);
     },
     [cases],

@@ -13,6 +13,8 @@
 - SSE 认证简单：每次请求都是标准 HTTP，API Key 直接放 Header 里
 - SSE 格式朴素：`event:` 说事件类型，`data:` 放 JSON，空行结束
 - 每个 `text-delta` 事件就是一个 token 片段，前端收到后立即追加显示，形成"打字机效果"
+- 一条消息可以包含多个内容块（content_block），每个块有独立的 start/delta/stop 生命周期
+- SSE 安全性优于 WebSocket：每次请求独立认证，Token 过期立即拒绝；WebSocket 握手后数据帧不再经过认证层
 
 ## 代码解析
 
