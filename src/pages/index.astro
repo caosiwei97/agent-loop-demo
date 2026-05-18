@@ -1,0 +1,44 @@
+---
+import App from '@/components/App';
+import { getCollection } from 'astro:content';
+import '@/styles/global.css';
+
+const allCases = await getCollection('cases');
+const libFiles = await getCollection('libFiles');
+const overviewEntries = await getCollection('overview');
+const overviewScene = overviewEntries.find(e => e.id === 'overview')?.data ?? null;
+
+const caseList = allCases.map(c => ({
+  id: c.data.id,
+  title: c.data.title,
+  group: c.data.group,
+  description: c.data.description,
+  section: c.data.section,
+  content: c.data.content,
+  files: c.data.files,
+}));
+
+const caseData = Object.fromEntries(allCases.map(c => [c.data.id, c.data]));
+const libData = Object.fromEntries(libFiles.map(f => [f.data.name, f.data.source]));
+---
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/favicon.svg" />
+  <script is:inline>
+    window.EXCALIDRAW_ASSET_PATH = "/";
+  </script>
+</head>
+<body>
+  <div id="root">
+    <App
+      client:load
+      caseList={caseList}
+      caseData={caseData}
+      libData={libData}
+      overviewScene={overviewScene}
+    />
+  </div>
+</body>
+</html>

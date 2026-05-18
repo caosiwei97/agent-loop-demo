@@ -4,3 +4,4 @@ dist/
 *.tsbuildinfo
 .playwright-mcp
 _run_*.mjs
+.sisyphus/
