@@ -1,0 +1,67 @@
+cases/08-loop-fingerprint/interactive.html
+  013e29c4e39d0345 1-327
+cases/10-token-budget/interactive.html
+  013e29c4e39d0345 1-328
+cases/06-heartbeat-watchdog/interactive.html
+  013e29c4e39d0345 1-348
+cases/07-three-layer-degradation/interactive.html
+  013e29c4e39d0345 6-7,11,14,18-39,41,46-51,53-60,63-66,71-145,147-258,260-263,265-266,268-270,272-282,284,287-288,290-297,300-301,303-329,331-347,349,351-357,359-366
+cases/03-execute-while-streaming/interactive.html
+  8135f04a8e9c4471 1-195
+cases/05-retry-backoff/index.mjs
+  013e29c4e39d0345 38,43,45
+cases/04-concurrency-safety/interactive.html
+  8135f04a8e9c4471 1-274
+cases/11-truncation-recovery/interactive.html
+  013e29c4e39d0345 1-363
+cases/05-retry-backoff/knowledge.md
+  013e29c4e39d0345 33,36,38-41
+cases/12-agent-loop-skeleton/interactive.html
+  013e29c4e39d0345 6-7,13-14,17,19-39,45-52,55-63,66-69,71-72,77-174,176-210,212-215,217-267,269-283,285-288,290-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.14",
+  "base_commit_sha": "fdf12d193572ae54a95f1610a17564febfed626b",
+  "prompts": {
+    "013e29c4e39d0345": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b203296b-2406-4681-8ba3-720c5bde62c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 2155,
+      "total_deletions": 1028,
+      "accepted_lines": 1972,
+      "overriden_lines": 0
+    },
+    "3fcbbc60496f0361": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5013e365-c97c-4df5-97c9-bffe8bd08c12",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 103,
+      "total_deletions": 58,
+      "accepted_lines": 92,
+      "overriden_lines": 4
+    },
+    "8135f04a8e9c4471": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1a1ffd2d-93b6-48db-abb4-c727ac380010",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 2784,
+      "total_deletions": 707,
+      "accepted_lines": 1792,
+      "overriden_lines": 1
+    }
+  }
+}
