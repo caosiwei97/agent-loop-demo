@@ -1,0 +1,67 @@
+apps/web/src/tabs/KnowledgeTab.tsx
+  8135f04a8e9c4471 1-11,15-31,34-67,70,72-73,75-97,99,101,103-105,107-108,110-131,134,136-236,238-254,256-262,267-268,271-272,278-286,288-301,305-316
+  013e29c4e39d0345 71,237
+cases/01-sse-streaming/mindmap.md
+  8135f04a8e9c4471 7-10,13,16,22-25,27-28,31
+cases/01-sse-streaming/knowledge.md
+  8135f04a8e9c4471 16-17
+cases/01-sse-streaming/interactive.html
+  013e29c4e39d0345 151-152,294,299,359
+  8135f04a8e9c4471 6,10-20,23,26-46,48,51-71,76-85,87-104,107-109,111-113,115-123,126-132,134-150,153-170,173,175-207,209-211,213-219,221-247,249-255,257-286,288-293,295-298,300-324,326-358,360-483,485-490
+cases/02-tool-call-parsing/interactive.html
+  8135f04a8e9c4471 10,13,18-42,47-52,55-57,59-64,69-72,76-118,120,122-131,133,135-141,143-146,149-168,170,172-175,180,182,186,188,190,192,194-195,198-201
+source/Agent-Loop-深度分享.md
+  8135f04a8e9c4471 52
+  3fcbbc60496f0361 44-45,54,70,91,95,130,146-147,160-161,205-206,216,226-228,278-279,319-320,337-339,379-380,411-412,414-415,477-479,502-504,510,515,519-521,587,589,591,593,595,724
+  013e29c4e39d0345 225,413,711,713,715,720,725
+apps/web/src/App.tsx
+  8135f04a8e9c4471 17,46
+apps/web/src/components/ContentArea.tsx
+  8135f04a8e9c4471 27,30,49,52,85-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.14",
+  "base_commit_sha": "510928265e8c086950f9358565f46789b128bcb4",
+  "prompts": {
+    "013e29c4e39d0345": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b203296b-2406-4681-8ba3-720c5bde62c2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 775,
+      "overriden_lines": 0
+    },
+    "3fcbbc60496f0361": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5013e365-c97c-4df5-97c9-bffe8bd08c12",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 92,
+      "overriden_lines": 0
+    },
+    "8135f04a8e9c4471": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1a1ffd2d-93b6-48db-abb4-c727ac380010",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "caosiwei <caosiwei@cvte.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1324,
+      "overriden_lines": 0
+    }
+  }
+}
