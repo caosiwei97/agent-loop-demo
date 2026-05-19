@@ -16,6 +16,19 @@ export interface UseWebContainerReturn {
   error: string | null;
 }
 
+// Strip ANSI escape sequences (colors, cursor movement, line clearing, etc.)
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?(?:\x07|\x1b\\)/g;
+
+// Match a carriage return possibly followed by a line feed
+const CRLF_RE = /\r\n?/g;
+
+// Spinner characters that appear alone on a line (artifacts from progress indicators)
+const SPINNER_ONLY_RE = /^[\\/|‑-]\s*$/;
+
+function stripAnsi(str: string): string {
+  return str.replace(ANSI_RE, '');
+}
+
 // Module-level singleton so the WebContainer persists across re-renders
 let wcInstance: WebContainer | null = null;
 let wcBooting: Promise<WebContainer> | null = null;
@@ -100,10 +113,12 @@ export function useWebContainer(): UseWebContainerReturn {
           .then(({ done, value }) => {
             if (done) return;
             if (value) {
-              const lines = value.split('\n');
+              const cleaned = stripAnsi(value.replace(CRLF_RE, '\n'));
+              const lines = cleaned.split('\n');
               for (const line of lines) {
-                if (line) {
-                  addLine(line, 'stdout');
+                const trimmed = line.trim();
+                if (trimmed && !SPINNER_ONLY_RE.test(trimmed)) {
+                  addLine(trimmed, 'stdout');
                 }
               }
             }

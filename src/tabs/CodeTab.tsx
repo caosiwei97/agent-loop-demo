@@ -53,6 +53,8 @@ export default function CodeTab({ selectedCase, selectedFile, onSelectFile, getF
   }, []);
 
   const [showConsole, setShowConsole] = useState(false);
+  const [consoleHeight, setConsoleHeight] = useState(300);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const handleRun = useCallback(() => {
     if (!selectedCase || running || booting) return;
@@ -307,39 +309,69 @@ export default function CodeTab({ selectedCase, selectedFile, onSelectFile, getF
           </div>
 
           {showConsole && (
-            <div style={{ height: 200, minHeight: 120, maxHeight: 320, display: 'flex', flexDirection: 'column', borderTop: '1px solid #333', background: '#1a1a1a' }}>
-              <div style={{
-                height: 28,
-                minHeight: 28,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 8px',
-                background: '#252526',
-                borderBottom: '1px solid #333',
-                flexShrink: 0,
-              }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#888', letterSpacing: '0.05em', textTransform: 'uppercase' }}>控制台</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <Button type="text" size="small" onClick={clearConsole} style={{ color: '#666', fontSize: 11, padding: '0 4px', height: 20, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                    <DeleteOutlined style={{ fontSize: 10 }} />
-                    清空
-                  </Button>
-                  <Button type="text" size="small" onClick={() => setShowConsole(false)} style={{ color: '#666', fontSize: 11, padding: '0 4px', height: 20 }}>
-                    ✕
-                  </Button>
-                </div>
-              </div>
-              <div style={{ flex: 1, overflow: 'auto', padding: '4px 8px', fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace", fontSize: 12, lineHeight: 1.6 }}>
-                {consoleLines.length === 0 && (
-                  <div style={{ color: '#555', fontStyle: 'italic' }}>等待运行...</div>
-                )}
-                {consoleLines.map((line: ConsoleLine, idx: number) => (
-                  <div key={idx} className={`console-${line.type}`} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                    {line.text}
+            <div style={{ display: 'flex', flexDirection: 'column', background: '#1a1a1a' }}>
+              <div
+                style={{
+                  height: 4,
+                  cursor: 'ns-resize',
+                  background: '#333',
+                  flexShrink: 0,
+                  transition: 'background 0.15s',
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startY = e.clientY;
+                  const startH = consoleHeight;
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = startY - ev.clientY;
+                    setConsoleHeight(Math.max(120, Math.min(400, startH + delta)));
+                  };
+                  const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                  };
+                  document.body.style.cursor = 'ns-resize';
+                  document.body.style.userSelect = 'none';
+                  document.addEventListener('mousemove', onMove);
+                  document.addEventListener('mouseup', onUp);
+                }}
+              />
+              <div ref={panelRef} style={{ height: consoleHeight, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{
+                  height: 28,
+                  minHeight: 28,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0 8px',
+                  background: '#252526',
+                  borderBottom: '1px solid #333',
+                  flexShrink: 0,
+                }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#888', letterSpacing: '0.05em', textTransform: 'uppercase' }}>控制台</span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <Button type="text" size="small" onClick={clearConsole} style={{ color: '#666', fontSize: 11, padding: '0 4px', height: 20, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <DeleteOutlined style={{ fontSize: 10 }} />
+                      清空
+                    </Button>
+                    <Button type="text" size="small" onClick={() => setShowConsole(false)} style={{ color: '#666', fontSize: 11, padding: '0 4px', height: 20 }}>
+                      ✕
+                    </Button>
                   </div>
-                ))}
-                <div ref={consoleEndRef} />
+                </div>
+                <div style={{ flex: 1, overflow: 'auto', padding: '4px 8px', fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace", fontSize: 12, lineHeight: 1.6 }}>
+                  {consoleLines.length === 0 && (
+                    <div style={{ color: '#555', fontStyle: 'italic' }}>等待运行...</div>
+                  )}
+                  {consoleLines.map((line: ConsoleLine, idx: number) => (
+                    <div key={idx} className={`console-${line.type}`} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                      {line.text}
+                    </div>
+                  ))}
+                  <div ref={consoleEndRef} />
+                </div>
               </div>
             </div>
           )}
