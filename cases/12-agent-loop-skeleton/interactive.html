@@ -45,7 +45,7 @@ svg{width:100%;height:100%}
   <h2>Agent Loop 架构 — 力导向交互图</h2>
   <div class="controls">
     <button class="active" id="btnAll" onclick="showAll()">全景</button>
-    <button id="btnFuse" onclick="highlightFuses()">三根保险丝</button>
+    <button id="btnFuse" onclick="highlightFuses()">三层防御</button>
     <button id="btnExit" onclick="highlightExits()">七种退出</button>
     <button onclick="runSimulation()">模拟执行</button>
     <button onclick="resetHighlight()">重置高亮</button>
@@ -57,7 +57,7 @@ svg{width:100%;height:100%}
       <div class="tooltip" id="tooltip"></div>
       <div class="legend">
         <div class="legend-item"><div class="legend-dot" style="background:#569cd6"></div>核心循环</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>保险丝</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>防御层</div>
         <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>退出路径</div>
         <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>工具系统</div>
         <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>容错</div>
@@ -229,7 +229,7 @@ function highlightFuses() {
   nodeSel.select('circle').attr('opacity', d => fuseIds.includes(d.id) ? 1 : 0.15);
   nodeSel.select('text').attr('opacity', d => fuseIds.includes(d.id) ? 1 : 0.2);
   linkSel.attr('opacity', d => fuseIds.includes(d.source.id) && fuseIds.includes(d.target.id) ? 1 : 0.08);
-  document.getElementById('statusText').textContent = '三根保险丝: 死循环检测 + Token预算 + 截断恢复';
+  document.getElementById('statusText').textContent = '三层防御: 死循环检测 + Token预算 + 截断恢复';
 }
 
 function highlightExits() {
@@ -254,14 +254,14 @@ async function runSimulation() {
   document.getElementById('statusText').textContent = '模拟 Agent Loop 执行过程...';
 
   const steps = [
-    { nodes: ['loop','fuse1'], msg: '保险丝1: 检查是否有重复调用...正常', cls: 'sim-active' },
+    { nodes: ['loop','fuse1'], msg: '第一层: 检查是否有重复调用...正常', cls: 'sim-active' },
     { nodes: ['loop','model'], msg: '调用模型 API (流式)', cls: 'sim-active' },
     { nodes: ['model','streaming'], msg: '流式解析: 收到 text + tool_use', cls: 'sim-active' },
     { nodes: ['streaming','toolexec'], msg: '工具执行器: read_file(src/index.ts)', cls: 'sim-ok' },
     { nodes: ['toolexec','concurrency'], msg: '并发调度: Read → 可并发', cls: 'sim-ok' },
     { nodes: ['toolexec','loop'], msg: '结果返回，进入下一轮', cls: 'sim-active' },
-    { nodes: ['loop','fuse1'], msg: '保险丝1: 检查...同一文件读第2次', cls: 'sim-fuse' },
-    { nodes: ['loop','fuse2'], msg: '保险丝2: Token 65% (9750/15000)', cls: 'sim-active' },
+    { nodes: ['loop','fuse1'], msg: '第一层: 检查...同一文件读第2次', cls: 'sim-fuse' },
+    { nodes: ['loop','fuse2'], msg: '第二层: Token 65% (9750/15000)', cls: 'sim-active' },
     { nodes: ['loop','model'], msg: '调用模型 (第3轮)', cls: 'sim-active' },
     { nodes: ['model','fuse3'], msg: '输出正常 (finishReason: stop)', cls: 'sim-ok' },
     { nodes: ['loop','exit_completed'], msg: '退出: end_turn → completed ✓', cls: 'sim-ok' },

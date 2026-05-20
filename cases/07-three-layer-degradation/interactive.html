@@ -4,366 +4,280 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>三层降级链 — DAG 拓扑图</title>
-<script src="/vendor/d3.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
-.container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
-h2{color:#569cd6;font-size:16px}
+html,body{height:100%;background:#1e1e1e;color:#ccc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
+.wrap{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
+.title{color:#569cd6;font-size:16px;font-weight:600}
 .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
-button:hover{background:#1177bb}
-button:disabled{background:#333;color:#777;cursor:not-allowed}
-.status{color:#6a9955;font-size:12px}
-.main{display:flex;flex:1;gap:12px;overflow:hidden}
-.dag-panel{flex:2;border:1px solid #333;border-radius:6px;overflow:hidden;position:relative}
-.info-panel{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
-.panel-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
-svg{width:100%;height:100%}
-.node-group{cursor:pointer}
-.node-rect{rx:8;ry:8;stroke-width:2;transition:fill .5s,stroke .5s}
-.node-label{font-size:11px;fill:#cccccc;text-anchor:middle;pointer-events:none}
-.node-sublabel{font-size:9px;fill:#858585;text-anchor:middle;pointer-events:none}
-.edge-path{fill:none;stroke:#555;stroke-width:1.5}
-.edge-label{font-size:9px;fill:#858585}
-.log-entry{padding:4px 8px;margin:2px 0;border-radius:2px;font-size:11px;animation:fadeIn .3s}
-.log-l1{background:rgba(139,92,246,0.1);border-left:2px solid #8b5cf6;color:#c4b5fd}
-.log-l2{background:rgba(245,158,11,0.1);border-left:2px solid #f59e0b;color:#ffd8a8}
-.log-l3{background:rgba(239,68,68,0.1);border-left:2px solid #ef4444;color:#ffc9c9}
-.log-ok{background:rgba(34,197,94,0.1);border-left:2px solid #22c55e;color:#b2f2bb}
-.log-info{background:rgba(86,156,214,0.1);border-left:2px solid #4a9eed;color:#a5d8ff}
-.detail-card{padding:8px;border:1px solid #444;border-radius:4px;background:#252526;font-size:11px}
-.detail-title{font-weight:bold;margin-bottom:4px}
-.legend{display:flex;gap:12px;font-size:10px;color:#858585;position:absolute;bottom:8px;left:8px}
-.legend-item{display:flex;align-items:center;gap:4px}
-.legend-dot{width:10px;height:10px;border-radius:3px}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes glow{0%,100%{filter:brightness(1)}50%{filter:brightness(1.4)}}
+.controls button{background:#0e639c;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:12px}
+.controls button:hover{background:#1177bb}
+.controls .reset{background:#333;border:1px solid #555}
+.controls .reset:hover{background:#444}
+.hint{color:#6a9955;font-size:12px}
+.body{display:flex;flex:1;gap:12px;overflow:hidden}
+.graph{flex:2;border:1px solid #333;border-radius:6px;background:#1a1a2e;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:30px 0}
+.sidebar{flex:1;border:1px solid #333;border-radius:6px;padding:12px;overflow-y:auto;min-width:200px;display:flex;flex-direction:column;gap:8px}
+.sidebar-title{color:#569cd6;font-size:11px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.log{padding:5px 8px;margin:2px 0;border-radius:3px;font-size:11px;font-family:monospace}
+.log-l1{background:rgba(139,92,246,.08);border-left:2px solid #8b5cf6;color:#c4b5fd}
+.log-l2{background:rgba(245,158,11,.08);border-left:2px solid #f59e0b;color:#fcd34d}
+.log-l3{background:rgba(239,68,68,.08);border-left:2px solid #ef4444;color:#fca5a5}
+.log-ok{background:rgba(34,197,94,.08);border-left:2px solid #22c55e;color:#86efac}
+.log-info{background:rgba(78,201,176,.08);border-left:2px solid #4ec9b0;color:#a5d8ff}
+.detail{padding:10px;border:1px solid #3a3a5c;border-radius:6px;background:#252526;font-size:11px;line-height:1.6}
 </style>
 </head>
 <body>
-<div class="container">
-  <h2>三层降级链 — DAG 拓扑图</h2>
+<div class="wrap">
+  <div class="title">三层降级链 — DAG 拓扑图</div>
   <div class="controls">
-    <button id="btnTrigger" onclick="triggerFailure()">触发持续故障</button>
-    <button onclick="triggerSuccess()">触发偶发故障(重试成功)</button>
-    <button onclick="resetAll()">重置</button>
-    <span class="status" id="statusText">点击节点查看详情，或触发故障观察降级路径</span>
+    <button onclick="runFail()">触发持续故障</button>
+    <button onclick="runOk()">触发偶发故障（重试成功）</button>
+    <button class="reset" onclick="reset()">重置</button>
+    <span class="hint" id="hint">点击节点查看详情，或触发故障观察降级路径</span>
   </div>
-  <div class="main">
-    <div class="dag-panel">
-      <svg id="dagSvg"></svg>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>Layer 1: 流式重试</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Layer 2: 非流式</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Layer 3: 模型降级</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>成功</div>
-      </div>
-    </div>
-    <div class="info-panel">
-      <div class="panel-title">执行日志</div>
-      <div id="logArea" style="flex:1;overflow-y:auto"></div>
-      <div id="detailArea"></div>
+  <div class="body">
+    <div class="graph" id="graphArea"></div>
+    <div class="sidebar">
+      <div class="sidebar-title">执行日志</div>
+      <div id="logs" style="flex:1;overflow-y:auto"></div>
+      <div id="detail"></div>
     </div>
   </div>
 </div>
 <script>
-const NW = 100, NH = 44;
-
-const nodes = [
-  { id: 'request',     col: 0, row: 1, label: '请求',       sub: 'API Call',     color: '#4a9eed' },
-  { id: 'stream',      col: 1, row: 0, label: '流式请求',   sub: 'stream: true', color: '#8b5cf6' },
-  { id: 'backoff',     col: 2, row: 0, label: '指数退避',   sub: '500ms×2^n',    color: '#8b5cf6' },
-  { id: 'nonstream',   col: 1, row: 2, label: '非流式请求', sub: 'timeout:120s', color: '#f59e0b' },
-  { id: 'backoff2',    col: 2, row: 2, label: '退避重试',   sub: '继承失败预算', color: '#f59e0b' },
-  { id: 'modelswitch', col: 3, row: 1, label: '模型降级',   sub: 'Opus→Sonnet',  color: '#ef4444' },
-  { id: 'success',     col: 4, row: 1, label: '成功',       sub: '返回结果',     color: '#22c55e' },
+// ─── Data ───
+const NODES = [
+  { id:'stream',   label:'流式请求',   sub:'stream: true', color:'#8b5cf6' },
+  { id:'backoff1', label:'指数退避',   sub:'500ms×2^n',    color:'#8b5cf6' },
+  { id:'non',      label:'非流式请求', sub:'timeout:120s', color:'#f59e0b' },
+  { id:'backoff2', label:'退避重试',   sub:'继承失败预算', color:'#f59e0b' },
+  { id:'model',    label:'模型降级',   sub:'Opus→Sonnet',  color:'#ef4444' },
+  { id:'ok',       label:'成功',       sub:'返回结果',     color:'#22c55e' },
 ];
 
-const edges = [
-  { from: 'request',   to: 'stream',      label: '' },
-  { from: 'stream',    to: 'backoff',     label: '429/529' },
-  { from: 'backoff',   to: 'stream',      label: '重试',     loop: true },
-  { from: 'backoff',   to: 'success',     label: '成功' },
-  { from: 'backoff',   to: 'nonstream',   label: '连续失败' },
-  { from: 'nonstream', to: 'backoff2',    label: '529' },
-  { from: 'backoff2',  to: 'nonstream',   label: '重试',     loop: true },
-  { from: 'backoff2',  to: 'modelswitch', label: '3次529' },
-  { from: 'nonstream', to: 'success',     label: '成功' },
-  { from: 'modelswitch', to: 'success',   label: '' },
+const EDGES = [
+  { from:'stream',   to:'backoff1', label:'429/529' },
+  { from:'backoff1', to:'non',      label:'连续失败' },
+  { from:'non',      to:'backoff2', label:'529' },
+  { from:'backoff2', to:'model',    label:'3次529' },
+  { from:'model',    to:'ok',       label:'' },
+  // right branches
+  { from:'backoff1', to:'ok', label:'成功', branch:true },
+  { from:'non',      to:'ok', label:'成功', branch:true },
 ];
 
-const nodeDetails = {
-  request: '发起 API 请求。默认使用流式模式。',
-  stream: '通过 SSE 建立长连接。流式需要维持连接池，对服务端压力更大。',
-  backoff: '基础退避 500ms，每次翻倍。加随机抖动防止"重试风暴"。最多重试 10 次。优先使用 Retry-After 头。',
-  nonstream: '切换为一次性请求-响应。变成短连接，对服务端更友好。超时 120 秒。',
-  backoff2: '继承 Layer 1 的失败次数。两层的失败预算是连续的，不是各算各的。',
-  modelswitch: '不同模型通常有独立的算力配额。Opus 过载不代表 Sonnet 也过载。只改 model 字段，上下文不需要重建。',
-  success: '请求成功返回。可能来自任何一层。',
+const DETAILS = {
+  stream:'通过 SSE 建立流式长连接。流式需要维持连接池，但用户体验好（逐字输出）。',
+  backoff1:'基础退避 500ms，每次翻倍，加随机抖动。最多 10 次。优先使用 Retry-After 头。',
+  non:'切换为一次性请求-响应。短连接对服务端更友好。超时 120 秒。',
+  backoff2:'继承 Layer 1 的失败次数。两层失败预算连续计算。',
+  model:'不同模型有独立算力配额。Opus 过载不代表 Sonnet 也过载。只改 model 字段。',
+  ok:'请求成功返回。可能来自 Layer 1 退避成功、Layer 2 非流式成功、或 Layer 3 模型降级成功。',
 };
 
-let svg, gNodes, gEdges, w, h;
+// ─── Layout constants ───
+const NW = 180, NH = 50, GAP_Y = 40, PORT_R = 5;
+const CX = 140; // center x for main column
+const MARGIN_TOP = 20;
+
+// Calculate node positions: strict vertical, one column
+function nodePos(idx) {
+  return { x: CX, y: MARGIN_TOP + idx * (NH + GAP_Y) + NH / 2 };
+}
+
+// "成功" node is on the right, vertically centered
+const OK_X = CX + 250;
+const OK_Y = MARGIN_TOP + 2 * (NH + GAP_Y) + NH / 2; // aligned with row 2 (middle)
+
+function getPos(id) {
+  const idx = NODES.findIndex(n => n.id === id);
+  if (id === 'ok') return { x: OK_X, y: OK_Y };
+  return nodePos(idx);
+}
+
+// ─── State ───
 let activeNodes = new Set();
-let animRunning = false;
+let activeEdges = new Set();
+let running = false;
 
-function getNodePos(n) {
-  const padX = 70, padY = 60;
-  const cellW = (w - padX * 2 - NW) / 4;
-  const cellH = (h - padY * 2 - NH) / 2;
-  return {
-    x: padX + n.col * cellW + NW/2,
-    y: padY + n.row * cellH + NH/2
-  };
-}
+// ─── Render ───
+function render() {
+  const svgW = OK_X + NW / 2 + 40;
+  const svgH = MARGIN_TOP + NODES.length * (NH + GAP_Y) + 20;
 
-function initDag() {
-  const container = document.querySelector('.dag-panel');
-  const rect = container.getBoundingClientRect();
-  w = rect.width; h = rect.height;
+  let svg = `<svg width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">`;
+  svg += `<defs>
+    <marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,2L8,5L0,8z" fill="#555"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,2L8,5L0,8z" fill="#4a9eed"/></marker>
+  </defs>`;
 
-  svg = d3.select('#dagSvg');
-  svg.selectAll('*').remove();
+  // Draw edges
+  EDGES.forEach(e => {
+    const fp = getPos(e.from);
+    const tp = getPos(e.to);
+    const act = activeEdges.has(e.from+'->'+e.to);
+    const stroke = act ? '#4a9eed' : '#555';
+    const sw = act ? '2' : '1.5';
+    const marker = act ? 'url(#b)' : 'url(#a)';
 
-  const defs = svg.append('defs');
-  defs.append('marker').attr('id','arrow').attr('viewBox','0 0 10 10')
-    .attr('refX',9).attr('refY',5)
-    .attr('markerWidth',7).attr('markerHeight',7)
-    .attr('orient','auto')
-    .append('path').attr('d','M 0 1 L 9 5 L 0 9 z').attr('fill','#888');
+    let d, lx, ly;
+    if (!e.branch) {
+      // Straight vertical
+      const sy = fp.y + NH/2;
+      const ey = tp.y - NH/2;
+      d = `M${fp.x},${sy} L${tp.x},${ey}`;
+      lx = fp.x + 14; ly = (sy + ey) / 2 + 4;
+      // Port circles
+      svg += `<circle cx="${fp.x}" cy="${sy}" r="${PORT_R}" fill="#1a1a2e" stroke="${stroke}" stroke-width="1.5"/>`;
+      svg += `<circle cx="${tp.x}" cy="${ey}" r="${PORT_R}" fill="#1a1a2e" stroke="${stroke}" stroke-width="1.5"/>`;
+    } else {
+      // Branch to right (to "ok" node)
+      const sx = fp.x + NW/2;
+      const sy = fp.y;
+      const ex = tp.x - NW/2;
+      const ey = tp.y;
+      const midX = (sx + ex) / 2;
+      d = `M${sx},${sy} C${midX},${sy} ${midX},${ey} ${ex},${ey}`;
+      lx = midX; ly = (sy + ey) / 2 - 6;
+      svg += `<circle cx="${sx}" cy="${sy}" r="${PORT_R}" fill="#1a1a2e" stroke="${stroke}" stroke-width="1.5"/>`;
+      svg += `<circle cx="${ex}" cy="${ey}" r="${PORT_R}" fill="#1a1a2e" stroke="${stroke}" stroke-width="1.5"/>`;
+    }
 
-  defs.append('marker').attr('id','arrowActive').attr('viewBox','0 0 10 10')
-    .attr('refX',9).attr('refY',5)
-    .attr('markerWidth',7).attr('markerHeight',7)
-    .attr('orient','auto')
-    .append('path').attr('d','M 0 1 L 9 5 L 0 9 z').attr('fill','#4a9eed');
-
-  gEdges = svg.append('g');
-  gNodes = svg.append('g');
-
-  drawEdges();
-  drawNodes();
-}
-
-function edgePath(e) {
-  const fromNode = nodes.find(n => n.id === e.from);
-  const toNode = nodes.find(n => n.id === e.to);
-  const fp = getNodePos(fromNode);
-  const tp = getNodePos(toNode);
-
-  if (e.loop) {
-    const isTop = fromNode.row === 0;
-    const offsetY = isTop ? -32 : 32;
-    const mx = (fp.x + tp.x) / 2;
-    const my = fp.y + offsetY;
-    const sx = fp.x - NW/2 + 10;
-    const ex = tp.x + NW/2 - 10;
-    const sy = fp.y + (isTop ? -NH/2 : NH/2);
-    const ey = tp.y + (isTop ? -NH/2 : NH/2);
-    return { path: `M${sx},${sy} C${sx},${my} ${ex},${my} ${ex},${ey}`, lx: mx, ly: my + (isTop ? -8 : 12) };
-  }
-
-  const dx = tp.x - fp.x;
-  const dy = tp.y - fp.y;
-  const adx = Math.abs(dx), ady = Math.abs(dy);
-
-  let sx, sy, ex, ey;
-  if (adx > ady) {
-    sx = fp.x + (dx > 0 ? NW/2 : -NW/2);
-    sy = fp.y;
-    ex = tp.x + (dx > 0 ? -NW/2 - 4 : NW/2 + 4);
-    ey = tp.y;
-  } else {
-    sx = fp.x;
-    sy = fp.y + (dy > 0 ? NH/2 : -NH/2);
-    ex = tp.x;
-    ey = tp.y + (dy > 0 ? -NH/2 - 4 : NH/2 + 4);
-  }
-
-  if (adx > 10 && ady > 10) {
-    const mx = (sx + ex) / 2;
-    const my = (sy + ey) / 2;
-    return { path: `M${sx},${sy} Q${mx},${sy} ${ex},${ey}`, lx: mx + 4, ly: (sy + ey)/2 - 8 };
-  }
-
-  const lx = (sx + ex) / 2;
-  const ly = (sy + ey) / 2 - 8;
-  return { path: `M${sx},${sy} L${ex},${ey}`, lx, ly };
-}
-
-function drawEdges() {
-  gEdges.selectAll('*').remove();
-  edges.forEach(e => {
-    const { path, lx, ly } = edgePath(e);
-    const isActive = activeNodes.has(e.from) && activeNodes.has(e.to);
-    gEdges.append('path')
-      .attr('d', path)
-      .attr('class','edge-path')
-      .attr('stroke', isActive ? '#4a9eed' : '#555')
-      .attr('stroke-width', isActive ? 2.5 : 1.5)
-      .attr('marker-end', isActive ? 'url(#arrowActive)' : 'url(#arrow)')
-      .attr('data-from', e.from).attr('data-to', e.to);
-
+    svg += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" marker-end="${marker}"/>`;
     if (e.label) {
-      gEdges.append('text')
-        .attr('x', lx).attr('y', ly)
-        .attr('class','edge-label')
-        .attr('text-anchor','middle')
-        .attr('fill', isActive ? '#a5d8ff' : '#858585')
-        .text(e.label);
+      const lc = act ? '#a5d8ff' : '#666';
+      svg += `<text x="${lx}" y="${ly}" fill="${lc}" font-size="10">${e.label}</text>`;
     }
   });
-}
 
-function drawNodes() {
-  gNodes.selectAll('*').remove();
-  nodes.forEach(n => {
-    const pos = getNodePos(n);
-    const g = gNodes.append('g')
-      .attr('class','node-group')
-      .attr('transform', `translate(${pos.x},${pos.y})`)
-      .attr('data-id', n.id)
-      .on('click', () => showDetail(n.id));
+  // Draw nodes
+  NODES.forEach(n => {
+    const p = getPos(n.id);
+    const act = activeNodes.has(n.id);
+    const nx = p.x - NW/2, ny = p.y - NH/2;
+    const fill = act ? n.color + '20' : '#2d2d2d';
+    const borderColor = act ? n.color : '#3a3a5c';
+    const bw = act ? '2' : '1';
 
-    const isActive = activeNodes.has(n.id);
-    g.append('rect')
-      .attr('class','node-rect')
-      .attr('x', -NW/2).attr('y', -NH/2)
-      .attr('width', NW).attr('height', NH)
-      .attr('fill', isActive ? n.color + '33' : '#252526')
-      .attr('stroke', isActive ? n.color : '#444');
-
-    if (isActive) {
-      g.select('.node-rect').style('animation', 'glow 1.5s infinite');
-    }
-
-    g.append('text').attr('class','node-label').attr('y', -3).text(n.label);
-    g.append('text').attr('class','node-sublabel').attr('y', 12).text(n.sub);
+    svg += `<g style="cursor:pointer" onclick="showDetail('${n.id}')">`;
+    svg += `<rect x="${nx}" y="${ny}" width="${NW}" height="${NH}" rx="6" fill="${fill}" stroke="${borderColor}" stroke-width="${bw}"/>`;
+    // Left color bar
+    svg += `<rect x="${nx}" y="${ny}" width="4" height="${NH}" rx="2" fill="${n.color}"/>`;
+    // Gear icon
+    svg += `<text x="${nx+18}" y="${p.y+5}" fill="#888" font-size="14">⚙</text>`;
+    // Label
+    svg += `<text x="${nx+36}" y="${p.y-4}" fill="#e0e0e0" font-size="12" font-weight="500">${n.label}</text>`;
+    // Sublabel
+    svg += `<text x="${nx+36}" y="${p.y+12}" fill="#888" font-size="10">${n.sub}</text>`;
+    // Status circle
+    const scx = nx + NW - 20;
+    const scolor = act ? n.color : '#555';
+    svg += `<circle cx="${scx}" cy="${p.y}" r="9" fill="none" stroke="${scolor}" stroke-width="1.5"/>`;
+    const icon = n.id === 'ok' ? '✓' : (act ? '▶' : '✓');
+    svg += `<text x="${scx}" y="${p.y+4}" text-anchor="middle" fill="${scolor}" font-size="10" font-weight="bold">${icon}</text>`;
+    svg += `</g>`;
   });
+
+  svg += `</svg>`;
+  document.getElementById('graphArea').innerHTML = svg;
 }
 
-function highlightPath(nodeIds) {
-  activeNodes = new Set(nodeIds);
-  drawEdges();
-  drawNodes();
+function showDetail(id) {
+  const n = NODES.find(n => n.id === id);
+  document.getElementById('detail').innerHTML = `<div class="detail"><div style="color:${n.color};font-weight:600;margin-bottom:4px">⚙ ${n.label}</div><div style="color:#aaa">${DETAILS[id]}</div></div>`;
 }
 
-function showDetail(nodeId) {
-  const detail = nodeDetails[nodeId];
-  const node = nodes.find(n => n.id === nodeId);
-  document.getElementById('detailArea').innerHTML = `
-    <div class="detail-card">
-      <div class="detail-title" style="color:${node.color}">${node.label}</div>
-      <div style="color:#858585;margin-top:4px">${detail}</div>
-    </div>`;
+function hl(nodes, edges) {
+  activeNodes = new Set(nodes);
+  activeEdges = new Set(edges);
+  render();
 }
 
-function addLog(text, cls) {
-  const el = document.createElement('div');
-  el.className = `log-entry ${cls}`;
-  el.textContent = text;
-  document.getElementById('logArea').appendChild(el);
-  el.scrollIntoView({behavior:'smooth'});
+function addLog(t, c) {
+  const d = document.createElement('div');
+  d.className = 'log ' + c;
+  d.textContent = t;
+  document.getElementById('logs').appendChild(d);
+  d.scrollIntoView({behavior:'smooth'});
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function triggerFailure() {
-  if (animRunning) return;
-  animRunning = true;
-  document.getElementById('logArea').innerHTML = '';
-  document.getElementById('statusText').textContent = '模拟持续故障，观察三层降级...';
+async function runFail() {
+  if (running) return; running = true;
+  document.getElementById('logs').innerHTML = '';
+  document.getElementById('hint').textContent = '模拟持续故障...';
 
-  highlightPath(['request','stream']);
+  hl(['stream'], []);
   addLog('发起流式请求...', 'log-info');
-  await sleep(500);
+  await wait(600);
 
-  for (let i = 1; i <= 4; i++) {
-    highlightPath(['stream','backoff']);
-    const delay = 500 * Math.pow(2, i-1);
-    addLog(`[L1] 第 ${i} 次: 529 Overloaded → 退避 ${delay}ms`, 'log-l1');
-    await sleep(400);
-  }
+  hl(['stream','backoff1'], ['stream->backoff1']);
+  addLog('[L1] 529 → 退避 500ms', 'log-l1');
+  await wait(500);
+  addLog('[L1] 529 → 退避 1000ms', 'log-l1');
+  await wait(500);
+  addLog('[L1] 529 → 连续失败', 'log-l1');
+  await wait(400);
 
-  addLog('[L1] 连续失败 → 升级到 Layer 2', 'log-l1');
-  await sleep(300);
+  hl(['backoff1','non'], ['backoff1->non']);
+  addLog('[L1→L2] 切换非流式', 'log-l2');
+  await wait(600);
 
-  highlightPath(['backoff','nonstream']);
-  addLog('[L2] 切换非流式请求 (短连接，对服务端更友好)', 'log-l2');
-  await sleep(500);
+  hl(['non','backoff2'], ['non->backoff2']);
+  addLog('[L2] 529 × 3', 'log-l2');
+  await wait(600);
 
-  for (let i = 1; i <= 3; i++) {
-    highlightPath(['nonstream','backoff2']);
-    addLog(`[L2] 非流式第 ${i} 次: 529 Site Overloaded`, 'log-l2');
-    await sleep(400);
-  }
+  hl(['backoff2','model'], ['backoff2->model']);
+  addLog('[L2→L3] Opus → Sonnet', 'log-l3');
+  await wait(600);
 
-  addLog('[L2] 连续 3 次 529 → 升级到 Layer 3', 'log-l2');
-  await sleep(300);
+  hl(['model','ok'], ['model->ok']);
+  addLog('[L3] Sonnet 成功 ✓', 'log-ok');
+  await wait(400);
 
-  highlightPath(['backoff2','modelswitch']);
-  addLog('[L3] 切换模型: Opus → Sonnet', 'log-l3');
-  addLog('[L3] 保留完整上下文，只改 model 字段', 'log-l3');
-  await sleep(600);
-
-  highlightPath(['modelswitch','success']);
-  addLog('[L3] Sonnet 响应成功! ✓', 'log-ok');
-  await sleep(300);
-
-  highlightPath(['success']);
-  document.getElementById('statusText').textContent = '三层降级完成: L1流式重试→L2非流式→L3模型降级→成功';
-  animRunning = false;
+  hl(['ok'], []);
+  document.getElementById('hint').textContent = '完成: L1→L2→L3→成功';
+  running = false;
 }
 
-async function triggerSuccess() {
-  if (animRunning) return;
-  animRunning = true;
-  document.getElementById('logArea').innerHTML = '';
-  document.getElementById('statusText').textContent = '模拟偶发故障，Layer 1 重试成功...';
+async function runOk() {
+  if (running) return; running = true;
+  document.getElementById('logs').innerHTML = '';
+  document.getElementById('hint').textContent = '模拟偶发故障...';
 
-  highlightPath(['request','stream']);
+  hl(['stream'], []);
   addLog('发起流式请求...', 'log-info');
-  await sleep(500);
+  await wait(600);
 
-  highlightPath(['stream','backoff']);
-  addLog('[L1] 第 1 次: 429 Too Many Requests → 退避 500ms', 'log-l1');
-  await sleep(500);
+  hl(['stream','backoff1'], ['stream->backoff1']);
+  addLog('[L1] 429 → 退避', 'log-l1');
+  await wait(500);
+  addLog('[L1] 429 → 退避', 'log-l1');
+  await wait(500);
 
-  highlightPath(['backoff','stream']);
-  addLog('[L1] 重试...', 'log-l1');
-  await sleep(400);
+  hl(['backoff1','ok'], ['backoff1->ok']);
+  addLog('[L1] 第3次成功 ✓ 无需降级', 'log-ok');
+  await wait(400);
 
-  highlightPath(['stream','backoff']);
-  addLog('[L1] 第 2 次: 429 → 退避 1000ms', 'log-l1');
-  await sleep(500);
-
-  highlightPath(['backoff','success']);
-  addLog('[L1] 第 3 次: 成功! ✓', 'log-ok');
-  addLog('偶发故障通过 Layer 1 重试解决，无需降级', 'log-ok');
-  await sleep(300);
-
-  highlightPath(['success']);
-  document.getElementById('statusText').textContent = 'Layer 1 重试成功: 偶发故障不需要降级';
-  animRunning = false;
+  hl(['ok'], []);
+  document.getElementById('hint').textContent = 'L1 重试成功，无需降级';
+  running = false;
 }
 
-function resetAll() {
-  animRunning = false;
+function reset() {
+  running = false;
   activeNodes = new Set();
-  document.getElementById('logArea').innerHTML = '';
-  document.getElementById('detailArea').innerHTML = '';
-  document.getElementById('statusText').textContent = '点击节点查看详情，或触发故障观察降级路径';
-  drawEdges();
-  drawNodes();
+  activeEdges = new Set();
+  document.getElementById('logs').innerHTML = '';
+  document.getElementById('detail').innerHTML = '';
+  document.getElementById('hint').textContent = '点击节点查看详情，或触发故障观察降级路径';
+  render();
 }
 
-window.addEventListener('resize', () => {
-  const rect = document.querySelector('.dag-panel').getBoundingClientRect();
-  w = rect.width; h = rect.height;
-  drawEdges();
-  drawNodes();
-});
-setTimeout(initDag, 50);
+render();
 </script>
 </body>
 </html>

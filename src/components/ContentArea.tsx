@@ -94,7 +94,7 @@ export default function ContentArea({
           <KnowledgeTab knowledgeMd={selectedCase.knowledgeMd} mindmapMd={selectedCase.mindmapMd} />
         )}
         {tab.id === 'diagram' && !isOverview && (
-          <DiagramTab diagramMmd={selectedCase.diagramMmd} />
+          <DiagramTab diagramMmd={selectedCase.diagramMmd} diagramHtml={selectedCase.diagramHtml} />
         )}
         {tab.id === 'interactive' && !isOverview && (
           <InteractiveTab caseId={selectedCase.id} interactiveHtml={selectedCase.interactiveHtml} />

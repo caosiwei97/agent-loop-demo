@@ -166,7 +166,7 @@ console.log('总结: 哈希指纹检测');
 console.log('='.repeat(60));
 console.log();
 console.log('比喻:');
-console.log('  "你打电话给客服 10 次，每次答复都是正在处理中 -- 死循环"');
+console.log('  "刷新快递物流 10 次，每次都是运输中下一站郑州 -- 无进展"');
 console.log('  "如果每次得到不同的进展信息 -- 正常跟进"');
 console.log();
 console.log('关键设计:');

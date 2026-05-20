@@ -150,7 +150,7 @@ for (const result of statusResults) {
 
 console.log();
 console.log('  比喻:');
-console.log('    "你打电话给客服 10 次，每次答复都是正在处理中"');
+console.log('    "刷新快递物流 10 次，每次都是运输中下一站郑州"');
 console.log('    "-> 死循环，应该换个策略或者等待更长时间"');
 console.log();
 

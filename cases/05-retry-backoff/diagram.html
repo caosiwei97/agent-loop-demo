@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>指数退避重试 DAG</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#1a1a2e;overflow:hidden;display:flex;align-items:center;justify-content:center}
+svg{max-width:90%;max-height:95%}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 520 700" xmlns="http://www.w3.org/2000/svg" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,2 L8,5 L0,8 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- ====== EDGES (vertical main flow) ====== -->
+  <!-- API Call → Error Check -->
+  <line x1="260" y1="72" x2="260" y2="118" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="260" cy="72" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="260" cy="118" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+
+  <!-- Error Check → Retryable (left branch) -->
+  <path d="M220,170 C200,190 180,200 180,218" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="220" cy="170" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="180" cy="218" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <text x="182" y="195" fill="#666" font-size="10">可重试</text>
+
+  <!-- Error Check → Non-retryable (right branch) -->
+  <path d="M300,170 C320,190 340,200 340,218" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="300" cy="170" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="340" cy="218" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <text x="312" y="195" fill="#666" font-size="10">不可重试</text>
+
+  <!-- Retryable → Calc Delay -->
+  <line x1="180" y1="262" x2="180" y2="308" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="180" cy="262" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="180" cy="308" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+
+  <!-- Calc Delay → Wait -->
+  <line x1="180" y1="352" x2="180" y2="398" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="180" cy="352" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="180" cy="398" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+
+  <!-- Wait → Max Check -->
+  <line x1="180" y1="442" x2="180" y2="488" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="180" cy="442" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="180" cy="488" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+
+  <!-- Max Check → loop back to API Call (left side) -->
+  <path d="M100,510 C60,510 50,300 50,50 C50,30 140,28 180,48" fill="none" stroke="#555" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <circle cx="100" cy="510" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <text x="32" y="290" fill="#666" font-size="10" transform="rotate(-90,32,290)">重试</text>
+
+  <!-- Max Check → Degrade (right) -->
+  <path d="M260,510 C300,510 320,530 340,558" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="260" cy="510" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="340" cy="558" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <text x="290" y="525" fill="#666" font-size="10">放弃</text>
+
+  <!-- Non-retryable → Report Error -->
+  <line x1="340" y1="262" x2="340" y2="308" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="340" cy="262" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+  <circle cx="340" cy="308" r="4" fill="#1a1a2e" stroke="#555" stroke-width="1.5"/>
+
+  <!-- ====== NODES ====== -->
+
+  <!-- Node: API Call (top, centered) -->
+  <g>
+    <rect x="180" y="28" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="180" y="28" width="4" height="44" rx="2" fill="#4ec9b0"/>
+    <text x="198" y="53" fill="#888" font-size="13">⚙</text>
+    <text x="218" y="48" fill="#e0e0e0" font-size="12" font-weight="500">API 调用</text>
+    <text x="218" y="63" fill="#888" font-size="10">发起请求</text>
+    <circle cx="322" cy="50" r="8" fill="none" stroke="#4ec9b0" stroke-width="1.5"/>
+    <text x="322" y="54" text-anchor="middle" fill="#4ec9b0" font-size="10" font-weight="bold">✓</text>
+  </g>
+
+  <!-- Node: Error Check -->
+  <g>
+    <rect x="180" y="118" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="180" y="118" width="4" height="44" rx="2" fill="#f59e0b"/>
+    <text x="198" y="143" fill="#888" font-size="13">⚙</text>
+    <text x="218" y="138" fill="#e0e0e0" font-size="12" font-weight="500">判断错误类型</text>
+    <text x="218" y="153" fill="#888" font-size="10">分类处理</text>
+    <circle cx="322" cy="140" r="8" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="322" y="144" text-anchor="middle" fill="#f59e0b" font-size="9">?</text>
+  </g>
+
+  <!-- Node: Retryable -->
+  <g>
+    <rect x="100" y="218" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="100" y="218" width="4" height="44" rx="2" fill="#22c55e"/>
+    <text x="118" y="243" fill="#888" font-size="13">⚙</text>
+    <text x="138" y="238" fill="#e0e0e0" font-size="12" font-weight="500">可重试错误</text>
+    <text x="138" y="253" fill="#888" font-size="10">429/529/503</text>
+    <circle cx="242" cy="240" r="8" fill="none" stroke="#22c55e" stroke-width="1.5"/>
+    <text x="242" y="244" text-anchor="middle" fill="#22c55e" font-size="10" font-weight="bold">✓</text>
+  </g>
+
+  <!-- Node: Non-retryable -->
+  <g>
+    <rect x="260" y="218" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="260" y="218" width="4" height="44" rx="2" fill="#ef4444"/>
+    <text x="278" y="243" fill="#888" font-size="13">⚙</text>
+    <text x="298" y="238" fill="#e0e0e0" font-size="12" font-weight="500">不可重试错误</text>
+    <text x="298" y="253" fill="#888" font-size="10">400/401/403</text>
+    <circle cx="402" cy="240" r="8" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="402" y="244" text-anchor="middle" fill="#ef4444" font-size="10" font-weight="bold">✗</text>
+  </g>
+
+  <!-- Node: Calc Delay -->
+  <g>
+    <rect x="100" y="308" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="100" y="308" width="4" height="44" rx="2" fill="#8b5cf6"/>
+    <text x="118" y="333" fill="#888" font-size="13">⚙</text>
+    <text x="138" y="328" fill="#e0e0e0" font-size="12" font-weight="500">计算退避时间</text>
+    <text x="138" y="343" fill="#888" font-size="10">500ms × 2^n</text>
+    <circle cx="242" cy="330" r="8" fill="none" stroke="#8b5cf6" stroke-width="1.5"/>
+    <text x="242" y="334" text-anchor="middle" fill="#8b5cf6" font-size="10" font-weight="bold">✓</text>
+  </g>
+
+  <!-- Node: Wait + Jitter -->
+  <g>
+    <rect x="100" y="398" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="100" y="398" width="4" height="44" rx="2" fill="#f59e0b"/>
+    <text x="118" y="423" fill="#888" font-size="13">⚙</text>
+    <text x="138" y="418" fill="#e0e0e0" font-size="12" font-weight="500">等待 + 抖动</text>
+    <text x="138" y="433" fill="#888" font-size="10">delay + jitter</text>
+    <circle cx="242" cy="420" r="8" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="242" y="424" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="bold">✓</text>
+  </g>
+
+  <!-- Node: Max Retries? -->
+  <g>
+    <rect x="100" y="488" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="100" y="488" width="4" height="44" rx="2" fill="#f59e0b"/>
+    <text x="118" y="513" fill="#888" font-size="13">⚙</text>
+    <text x="138" y="508" fill="#e0e0e0" font-size="12" font-weight="500">达到上限?</text>
+    <text x="138" y="523" fill="#888" font-size="10">max 10 次</text>
+    <circle cx="242" cy="510" r="8" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="242" y="514" text-anchor="middle" fill="#f59e0b" font-size="9">?</text>
+  </g>
+
+  <!-- Node: Report Error -->
+  <g>
+    <rect x="260" y="308" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="260" y="308" width="4" height="44" rx="2" fill="#ef4444"/>
+    <text x="278" y="333" fill="#888" font-size="13">⚙</text>
+    <text x="298" y="328" fill="#e0e0e0" font-size="12" font-weight="500">直接报错</text>
+    <text x="298" y="343" fill="#888" font-size="10">throw error</text>
+    <circle cx="402" cy="330" r="8" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="402" y="334" text-anchor="middle" fill="#ef4444" font-size="10" font-weight="bold">✗</text>
+  </g>
+
+  <!-- Node: Degrade -->
+  <g>
+    <rect x="260" y="558" width="160" height="44" rx="6" fill="#2d2d2d" stroke="#3a3a5c"/>
+    <rect x="260" y="558" width="4" height="44" rx="2" fill="#ef4444"/>
+    <text x="278" y="583" fill="#888" font-size="13">⚙</text>
+    <text x="298" y="578" fill="#e0e0e0" font-size="12" font-weight="500">降级策略</text>
+    <text x="298" y="593" fill="#888" font-size="10">→ 案例 07</text>
+    <circle cx="402" cy="580" r="8" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="402" y="584" text-anchor="middle" fill="#ef4444" font-size="10" font-weight="bold">!</text>
+  </g>
+</svg>
+</body>
+</html>

@@ -21,8 +21,14 @@ graph TB
     L2B -->|"连续 3 次 529"| L3A
 
     L3A2 --> SUCCESS["✅ 成功"]
+    L3A2 -->|"也失败"| FAILOVER["兄弟模型 Failover<br/>Sonnet 4.5 / Haiku"]
+    FAILOVER -->|"成功"| SUCCESS
+    FAILOVER -->|"都不行"| CROSS["跨 Provider<br/>OpenAI / Google"]
+    CROSS --> SUCCESS
 
     style Layer1 fill:#e5dbff,stroke:#8b5cf6
     style Layer2 fill:#fff3bf,stroke:#f59e0b
     style Layer3 fill:#ffc9c9,stroke:#ef4444
     style SUCCESS fill:#b2f2bb,stroke:#22c55e
+    style FAILOVER fill:#b2f2bb,stroke:#22c55e
+    style CROSS fill:#ffd8a8,stroke:#f59e0b

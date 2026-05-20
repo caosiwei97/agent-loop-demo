@@ -20,6 +20,7 @@ export interface FullCaseData extends CaseListItem {
   indexSource: string;
   knowledgeMd: string | null;
   diagramMmd: string | null;
+  diagramHtml: string | null;
   mindmapMd: string | null;
   interactiveHtml: string | null;
   excalidrawScene: Record<string, unknown> | null;

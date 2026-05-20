@@ -36,6 +36,10 @@ button.danger:hover{background:#a00000}
 .comp-label{min-width:100px;color:#858585;font-size:12px}
 .comp-bar-container{flex:1;height:20px;background:#333;border-radius:3px;overflow:hidden}
 .comp-bar{height:100%;border-radius:3px;transition:width .5s}
+.next-steps{display:none;margin-top:8px;padding:8px 12px;border-left:3px solid #8b5cf6;background:#252526;font-size:12px;line-height:1.8;color:#cccccc;border-radius:0 4px 4px 0}
+.next-steps .ns-title{color:#8b5cf6;font-weight:bold;margin-bottom:2px}
+.next-steps .ns-link{display:block;color:#569cd6;margin:2px 0}
+.next-steps .ns-note{color:#cccccc;margin-top:4px}
 </style>
 </head>
 <body>
@@ -48,6 +52,7 @@ button.danger:hover{background:#a00000}
       <button class="danger" onclick="resetAll()">重置</button>
       <span id="statusText" class="status">点击按钮开始模拟</span>
     </div>
+    <div id="nextSteps" class="next-steps"></div>
   </div>
   <div class="main">
     <div class="panel">
@@ -155,6 +160,11 @@ async function simulateRetry() {
     await sleep(Math.min(delay / 5, 600));
   }
   document.getElementById('statusText').textContent = '模拟完成: 连续 5 次 529，需要考虑降级';
+  const ns = document.getElementById('nextSteps');
+  ns.innerHTML = '<div class="ns-title">退避重试也有极限，接下来：</div>'
+    + '<span class="ns-link">→ 案例 06：还有一种更隐蔽的故障——连接没断但不再推送数据（沉默故障 / TCP 半开）</span>'
+    + '<span class="ns-link">→ 案例 07：退避不够用时，三层降级链（流式→非流式→换模型）怎么兜底</span>';
+  ns.style.display = 'block';
   running = false;
 }
 async function simulateSuccess() {
@@ -175,6 +185,9 @@ async function simulateSuccess() {
   addTimelineEntry(attempts.length, Math.round(delay), `✅ 成功! 模型返回正常响应`, false);
   updateBarChart(); updateDelayTable(); updateComparison();
   document.getElementById('statusText').textContent = '模拟完成: 第 3 次重试成功';
+  const ns = document.getElementById('nextSteps');
+  ns.innerHTML = '<div class="ns-note">偶发 429 通过退避重试解决了。但如果连接根本没报错，只是沉默地停了呢？<span style="color:#8b5cf6">→ 案例 06</span></div>';
+  ns.style.display = 'block';
   running = false;
 }
 function resetAll() {
@@ -184,6 +197,7 @@ function resetAll() {
   document.getElementById('delayTable').innerHTML = '';
   document.getElementById('comparison').innerHTML = '';
   document.getElementById('statusText').textContent = '点击按钮开始模拟';
+  document.getElementById('nextSteps').style.display = 'none';
 }
 </script>
 </body>

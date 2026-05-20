@@ -4,19 +4,19 @@
 
 ## 引子
 
-在几年前经典的 `ReAct` 模式下，假如让 Agent 把项目里的 moment 全部替换成 dayjs，过程是这样：
+在几年前经典的 `ReAct` 模式下，假如让 Agent 把项目里 12 个 ESLint 报错全部修掉，过程是这样：
 
 ```
-Thought: 先找哪些文件用了 moment
-Action:  Grep("moment")
-Observation: 找到 12 个文件                     ← 必须等结果回来
+Thought: 先看有哪些 ESLint 错误
+Action:  Bash("npx eslint src/ --format json")
+Observation: 12 个文件有错误                     ← 必须等结果回来
 
-Thought: 看第一个文件
-Action:  Read("src/index.ts")
-Observation: import moment from 'moment'...      ← 必须等结果回来
+Thought: 看第一个文件的错误
+Action:  Read("src/utils.ts")
+Observation: Line 3: 'value' is defined but...   ← 必须等结果回来
 
-Thought: 替换
-Action:  Edit("src/index.ts", ...)
+Thought: 修掉这个未使用变量
+Action:  Edit("src/utils.ts", ...)
 Observation: 完成                                ← 必须等结果回来
 ...重复 11 次
 ```
@@ -94,33 +94,42 @@ content_block_stop  → （结束）
 
 最简单的做法：等整条消息说完再依次执行工具。早期 Agent 大多这么干，逻辑简单不易出错。但这么做等于把流式的优势全丢了——模型还在生成后面的内容，前面已经解析好的工具调用却干等着。现在主流的 Agent 都在做一个关键优化：**工具块一完成就立刻开始执行，不等整条消息说完。**
 
-假设模型一次回复要做三件事：输出文字、`Read` 文件 A、`Read` 文件 B、`Read` 文件 C。
+假设用户让 Agent 查看三个文件，完整的处理流程如下：
 
 ```mermaid
 sequenceDiagram
-    participant M as 模型
-    participant A as Agent Runtime
+    participant U as 用户
+    participant R as Agent Runtime
+    participant API as LLM API
     participant T1 as Tool: Read A
     participant T2 as Tool: Read B
     participant T3 as Tool: Read C
 
-    Note over M,A: 模型开始流式输出
-    M->>A: 文本："好的，我来看看..."
+    U->>R: 1.1 "帮我看看这三个文件"
+    R->>API: 1.2 组装 Prompt + 发起 SSE 请求
+
+    Note over API,R: 流式响应开始
+    API-->>R: 2.1 文本 token："好的，我来看看..."
+    R-->>U: 2.2 实时显示文字
 
     rect rgb(220, 240, 255)
-        Note right of M: 工具块完成即执行
-        M-->>A: tool_call_1 完成
-        A->>T1: 立即执行 Read A
-        M-->>A: tool_call_2 完成
-        A->>T2: 立即执行 Read B
-        T1-->>A: A 结果返回
-        M-->>A: tool_call_3 完成
-        A->>T3: 立即执行 Read C
-        T2-->>A: B 结果返回
-        T3-->>A: C 结果返回
+        Note right of API: 工具块完成即执行
+        API-->>R: 3.1 tool_call_1 JSON 拼接完成
+        R->>T1: 3.2 立即执行 Read A
+        API-->>R: 3.3 tool_call_2 JSON 拼接完成
+        R->>T2: 3.4 立即执行 Read B
+        T1-->>R: 3.5 A 结果返回
+        API-->>R: 3.6 tool_call_3 JSON 拼接完成
+        R->>T3: 3.7 立即执行 Read C
+        T2-->>R: 3.8 B 结果返回
+        T3-->>R: 3.9 C 结果返回
     end
 
-    M->>A: 分析结果，输出总结
+    Note over API,R: stop_reason = "tool_use"，SSE 流结束
+    R->>API: 4.1 带三个 tool_result 发起新 SSE 请求
+    API-->>R: 4.2 流式输出分析结果
+    R-->>U: 4.3 实时显示总结
+    Note over API,R: stop_reason = "end_turn"，循环结束
 ```
 
 
@@ -173,24 +182,24 @@ sequenceDiagram
     participant API as LLM API
 
     rect rgb(220, 255, 220)
-        Note over C,API: 流式输出
-        S->>API: SSE 请求
-        API-->>C: SSE 流：文字 + tool_use
+        Note over C,API: 第一阶段：流式输出
+        S->>API: 1.1 SSE 请求
+        API-->>C: 1.2 SSE 流：文字 + tool_use
         Note over C: stop_reason = "tool_use"<br/>SSE 流自然结束
     end
 
     rect rgb(255, 248, 220)
-        Note over U,C: 审批
-        C->>U: "要修改 src/app.ts？"
-        U->>C: 允许
+        Note over U,C: 第二阶段：审批
+        C->>U: 2.1 "要修改 src/app.ts？"
+        U->>C: 2.2 允许
     end
 
     rect rgb(220, 240, 255)
-        Note over C,API: 执行 + 新流
-        C->>S: HTTP POST（tool_result）
-        S->>S: 执行工具
-        S->>API: 带工具结果，新 SSE 请求
-        API-->>C: 新 SSE 流
+        Note over C,API: 第三阶段：执行 + 新流
+        C->>S: 3.1 HTTP POST（tool_result）
+        S->>S: 3.2 执行工具
+        S->>API: 3.3 带工具结果，新 SSE 请求
+        API-->>C: 3.4 新 SSE 流
     end
 ```
 
@@ -222,7 +231,7 @@ sequenceDiagram
 
 ## 二、`API` 挂了怎么办
 
-前面讲的所有东西——碎片拼接、边说边执行、并发调度——都建立在一个前提上：**`SSE` 连接正常。**
+前面讲的所有东西——碎片拼接、边说边执行、并发调度——都建立在一个前提上：`**SSE` 连接正常。**
 
 但真实情况是，连接会断、服务会过载、密钥会过期。流式架构越快，对连接稳定性的依赖就越强——同步请求挂了大不了重发一次，流式连接挂在中间，手里还有半成品数据，处理起来复杂得多。所以，光有流式架构不够，还得有一套容错机制来兜底。
 
@@ -236,6 +245,7 @@ sequenceDiagram
 | **可重试**  | `429`、`529`/`503`、`408`、`ECONNRESET` | 指数退避重试 |
 | **不可重试** | `400`、`401`/`403`、`402`              | 直接报错   |
 | **需要降级** | 连续多次 `529`、流式反复断开                    | 换策略    |
+
 
 最差的做法： `while + sleep`。
 
@@ -292,7 +302,7 @@ async function retryWithBackoff(fn, maxRetries = 10) {
 
 比 `529` 更让人头疼的故障：连接没报错也没断开，但不再推送数据了。用户看到 AI 输出到一半停住，光标在闪，界面显示"正在生成"——等多久都不会有新内容。
 
-这是 `TCP` 的半开状态。网络抖动后客户端 `TCP` 连接可能已失效，但浏览器不知道。`reader.read()` 一直挂起，`try-catch` 捕获不到任何错误——因为没有错误发生，只是在"等"。
+这是 `TCP` 的半开状态。网络抖动后客户端 `TCP` 连接可能已失效，但浏览器不知道。`reader.read()` 一直挂起，`try-catch` 捕获不到任何错误——因为没有错误发生，只是在"等"。那怎么办呢？
 
 解法：**服务端心跳 + 客户端超时检测**
 
@@ -403,10 +413,12 @@ graph LR
     B --> E{都不行?}
     E --> F[跨 Provider 切换<br/>OpenAI / Google]
 
-    style A fill:#ffc9c9,stroke:#ef4444
-    style C fill:#b2f2bb,stroke:#22c55e
-    style D fill:#b2f2bb,stroke:#22c55e
-    style F fill:#ffd8a8,stroke:#f59e0b
+    style A fill:#ffc9c9,stroke:#ef4444,color:#333
+    style B fill:#fff,stroke:#666,color:#333
+    style C fill:#b2f2bb,stroke:#22c55e,color:#333
+    style D fill:#b2f2bb,stroke:#22c55e,color:#333
+    style E fill:#fff,stroke:#666,color:#333
+    style F fill:#ffd8a8,stroke:#f59e0b,color:#333
 ```
 
 
@@ -421,15 +433,15 @@ Sonnet 4.6 限流了，先试同 Provider 的 Sonnet 4.5 或 Haiku。`API` 速�
 
 前面两节解决的都是"外部问题"——网络断了、服务挂了、限流了。我们重试、降级、切 Provider，总能让 Agent 继续跑下去。
 
-但有一类故障不是外部的：`**API` 活得好好的，连接也没问题，Agent 自己跑飞了。**
+但如果 Agent 自己失控了咋整？
 
-最常见的三种：死循环、`Token` 烧穿、输出截断。它们之间有因果链——死循环会导致 `Token` 烧穿，`Token` 用太多会触发输出截断。但它们也可以独立发生，所以需要三根独立的保险丝分别防护。
+最常见的三种：死循环、`Token` 烧穿、输出截断。它们之间有因果链——死循环会导致 `Token` 烧穿，`Token` 用太多会触发输出截断。但它们也可以独立发生，所以需要三层独立的防御分别应对。
 
-假设你让 Agent 把所有 `console.log` 替换成 `logger.info`。它改完一个文件后，发现"还有 console.log"（因为 `logger.info` 这个字符串恰好包含 `log`），于是又改了一遍，然后又读了一遍，又改了一遍……15 分钟后跑了 200 轮，烧了 $50 `Token`，文件面目全非。
+你让 Agent 修一个 TypeScript 编译错误。它改了 A 文件的类型定义，编译又报 B 文件类型不兼容，改了 B 又把 A 的类型搞坏了——两个文件互相依赖，来回改了 30 轮，代码越改越面目全非。15 分钟后烧了 $50 `Token`，Bug 比修之前还多。
 
-这不是假设——是生产环境里 Agent 失控最典型的方式。
+这不是极端情况——是生产环境里 Agent 失控最典型的方式。
 
-### 保险丝 1：死循环检测
+### 第一层防御：死循环检测
 
 死循环最危险的地方在于它**看起来在正常工作**。日志里全是成功的工具调用，你不仔细看根本发现不了在原地踏步。
 
@@ -443,7 +455,7 @@ Sonnet 4.6 限流了，先试同 Provider 的 Sonnet 4.5 或 Haiku。`API` 速�
 
 但光看参数相同还不够。读同一个文件 10 次，每次内容不同（有其他进程在改），这不算死循环——每次都有新信息。所以同时记录**调用指纹 + 结果指纹**，只有"同样调用 + 同样结果"才算无进展。
 
-打个比方：打电话给客服 10 次，每次答复都是"正在处理中"——这是死循环。每次得到不同进展信息——这是正常跟进。
+举个例子：刷新快递物流 10 次，每次都显示"运输中，下一站：郑州"——这是无进展。每次看到不同的中转站——这是正常更新。
 
 ```javascript
 import { createHash } from 'node:crypto';
@@ -467,9 +479,9 @@ function fingerprint(name, params) {
 
 通用重复检测只告警不阻断——`read_file` 被相同参数调多次可能只是 Agent 在不同推理步骤重新读取，属于合法场景。所以这个检测器的定位是"提醒"，不是"执法"。
 
-无进展轮询检测更多是防御性设计——比如 Agent 启动了一个后台任务，然后不停地查部署状态、检查健康检查。如果每次查到的状态都一样，这就是无进展的轮询。你不一定会频繁遇到，但一旦遇到（模型误判某个任务没完成，反复查同一个状态），没有这根保险丝就会烧 `Token`。
+无进展轮询检测更多是防御性设计——比如 Agent 启动了一个后台任务，然后不停地查部署状态、检查健康检查。如果每次查到的状态都一样，这就是无进展的轮询。你不一定会频繁遇到，但一旦遇到（模型误判某个任务没完成，反复查同一个状态），没有这层防御就会烧 `Token`。
 
-Ping-Pong 检测最巧妙——开头那个 console.log 例子就是典型的 `read_file → write_file → read_file → write_file`。检测算法从最近的调用往回扫，看是否存在 A→B→A→B 的交替模式。关键判断：两边结果都没变化才算原地打转。如果每次读到的内容不同（写入确实生效了），那是正常的读-改流程。
+Ping-Pong 检测最巧妙——开头那个类型互相依赖的例子就是典型的 `read_file → write_file → read_file → write_file`。检测算法从最近的调用往回扫，看是否存在 A→B→A→B 的交替模式。关键判断：两边结果都没变化才算原地打转。如果每次读到的内容不同（写入确实生效了），那是正常的读-改流程。
 
 全局熔断器是最后防线：30 次无进展强制停止，没有例外。即便前三种检测器都被关了或者都没触发，全局熔断器永远在线。
 
@@ -483,11 +495,11 @@ Break（30 次）→ 全局熔断，强制停止
 
 不在第一次重复就停——误杀代价太大，把正常工作的 Agent 强行停了比多跑几轮更浪费。先告警给 Agent 一个调整策略的机会，20 次基本可以确认是死循环了再动手。还有一个防刷屏的设计：告警不是每次都发，而是每 10 次发一次。第 10 次发一个、第 20 次发一个，不会在 10 到 19 之间每次都发。
 
-### 保险丝 2：`Token` 预算控制
+### 第二层防御：`Token` 预算控制
 
 死循环检测能拦住"同一个工具反复调用"的情况。但 Agent 失控不一定表现为工具重复——模型也会无限续写文本。它没调任何工具，就是在生成、生成、再生成，上下文越塞越满，每一轮的输入 `Token` 越来越贵。死循环检测完全不会触发，因为根本没有重复的工具调用。
 
-这需要另一根保险丝：不看行为模式，直接看资源消耗。
+这需要另一层防御：不看行为模式，直接看资源消耗。
 
 Claude Code 的做法是设输出 `Token` 预算（比如 30000），做两件事：
 
@@ -508,7 +520,7 @@ Claude Code 的做法是设输出 `Token` 预算（比如 30000），做两件�
 
 算笔账：Claude Sonnet 输出 $15/百万 `Token`。200 轮失控 × 1000 `Token` = 200,000 `Token` = $3。看着不多，但**输入才是大头**——每轮都带完整上下文（System Prompt + 对话历史 + 工具定义），200 轮累计输入可能是输出的 10-20 倍。**一次失控 $50-100。**
 
-### 保险丝 3：输出截断恢复
+### 第三层防御：输出截断恢复
 
 `Token` 预算是从客户端侧控制"别花太多"。但还有一个限制不在客户端手上——模型本身有 `max_output_tokens` 上限（比如 16K）。超过就强制截断，不管你内容写到哪了。
 
@@ -525,9 +537,9 @@ Claude Code 分三步递进恢复：
    "不要道歉"——模型第一反应是"抱歉回复被截了"，浪费 `Token`。"不要回顾"——模型第二反应是把前面复述一遍，也浪费 `Token`。
 3. **认栽**：3 次都不行 → 返回不完整结果，标记"输出被截断"。64K 上限下连续 3 次说不完，说明任务拆分有问题，人工介入比自动重试更有效。
 
-### Agent 什么时候该停？七种退出路径
+### 七种 Loop 退出路径
 
-三根保险丝各管各的危险场景，但它们最终都指向同一个问题：**Agent 应该怎么停下来？**
+三层防御各管各的危险场景，但它们最终都指向同一个问题：**Agent 应该怎么停下来？**
 
 正常完成要停，死循环要停，Token 烧完要停，截断恢复失败也要停。再加上用户主动中断、上下文满了、输入太长——总共有七种退出方式，每种对应不同的善后处理：
 
@@ -555,59 +567,53 @@ Claude Code 分三步递进恢复：
 
 不管哪种退出，都得告诉用户三件事：**停了、为什么停了、能做什么。** 没有 context 的"已停止"是用户体验灾难——用户不知道之前的工作有没有保存，不知道下一步该怎么办。
 
-### 三个保险丝的协作
+### 三层防御的协作
 
 ```mermaid
-graph TB
-    subgraph Loop["Agent Loop"]
-        direction TB
-        START([开始]) --> DETECT[保险丝 1: 死循环检测<br/>四种检测器 + 三级响应]
-        DETECT --> CALL[调用模型<br/>容错: 退避 + 三层降级]
-        CALL --> POST{输出状态}
-        POST -->|正常| BUDGET[保险丝 2: Token 预算<br/>90% nudge + 递减回报]
-        POST -->|max_tokens| TRUNC[保险丝 3: 截断恢复<br/>提上限 → 注入恢复 → 认栽]
-        BUDGET --> CHECK{还有工具?}
-        CHECK -->|是| DETECT
-        CHECK -->|否| DONE([completed])
-        TRUNC --> CALL
-    end
+flowchart TD
+    START([开始]) --> DETECT["第一层: 死循环检测<br/>四种检测器 + 三级响应"]
+    DETECT --> CALL["调用模型<br/>容错: 退避 + 三层降级"]
+    CALL --> POST{输出状态}
+    POST -->|正常| BUDGET["第二层: Token 预算<br/>90% nudge + 递减回报"]
+    POST -->|max_tokens| TRUNC["第三层: 截断恢复<br/>提上限 → 注入恢复 → 认栽"]
+    TRUNC -->|重试| CALL
+    BUDGET --> CHECK{还有工具?}
+    CHECK -->|是| DETECT
+    CHECK -->|否| DONE([completed])
 
-    subgraph Guard["全局兜底"]
-        MAX[max_turns<br/>上下文检查<br/>用户中断]
-    end
-
-    Loop -.->|任何阶段| Guard
-
-    style Loop fill:#e5dbff,stroke:#8b5cf6,opacity:30
-    style Guard fill:#ffd8a8,stroke:#f59e0b,opacity:30
-    style DETECT fill:#ffc9c9,stroke:#ef4444
-    style CALL fill:#a5d8ff,stroke:#4a9eed
-    style BUDGET fill:#fff3bf,stroke:#f59e0b
-    style TRUNC fill:#ffc9c9,stroke:#ef4444
-    style DONE fill:#b2f2bb,stroke:#22c55e
+    style START fill:#e8e8e8,stroke:#666,color:#333
+    style DETECT fill:#ffc9c9,stroke:#ef4444,color:#333
+    style CALL fill:#a5d8ff,stroke:#4a9eed,color:#333
+    style BUDGET fill:#fff3bf,stroke:#f59e0b,color:#333
+    style TRUNC fill:#ffc9c9,stroke:#ef4444,color:#333
+    style DONE fill:#b2f2bb,stroke:#22c55e,color:#333
+    style POST fill:#f8f8f8,stroke:#999,color:#333
+    style CHECK fill:#f8f8f8,stroke:#999,color:#333
 ```
 
 
 
-它们在 Agent Loop 的不同阶段分别守护不同风险，谁也不碍谁，加在一起就是一张网。就像大楼的消防系统：烟雾报警器、喷淋、防火门、消防栓——各管各的，但一起确保不管哪里出问题都有人管。
+> 全局兜底（max_turns、上下文检查、用户中断）在任何阶段都可能触发退出。
+
+它们在 Agent Loop 的不同阶段分别守护不同风险，谁也不碍谁，加在一起就是一张网。就像车的安全系统：ABS 防抱死、安全气囊、车道偏离预警——各管各的，但一起确保不管哪种情况都有兜底。
 
 ---
 
 ## 总结
 
-回头看，三个话题形成一条递进链：
+这三件事串起来，就是 Agent Loop 从"能跑"到"跑得稳"的完整链路：
 
 **流式架构让 Agent 快起来**——`SSE` 推 `token` 碎片，碎片拼成工具调用，工具调用边解析边执行，读操作并发写操作串行，审批塞在两次流之间的空隙里。这解决了"Agent 怎么跑起来不卡"。
 
 **但快了之后，连接断了怎么办？** 容错接手——错误先分类，可重试的走指数退避加抖动，沉默故障靠心跳检测，单次重试不够就升级到三层降级链（流式 → 非流式 → 换模型），单个 Provider 不够就跨 Provider 容灾。这解决了"外部环境出问题时 Agent 怎么活下来"。
 
-**但外部问题都兜住了，Agent 自己跑飞了怎么办？** 三根保险丝接手——死循环检测拦住工具层面的原地踏步，`Token` 预算控制拦住无限续写的资源消耗，截断恢复处理硬上限导致的输出中断。这些全在代码里硬编码，不是靠 `prompt` 告诉模型"请不要循环"。
+**但外部问题都兜住了，Agent 自己跑飞了怎么办？** 三层防御接手——死循环检测拦住工具层面的原地踏步，`Token` 预算控制拦住无限续写的资源消耗，截断恢复处理硬上限导致的输出中断。这些全在代码里硬编码，不是靠 `prompt` 告诉模型"请不要循环"。
 
 ---
 
 ## 课后练习
 
-写一个带"保险丝"的简易 Agent Loop 骨架，不需要框架和 `API Key`，用 mock 函数模拟：
+写一个带三层防御的简易 Agent Loop 骨架，不需要框架和 `API Key`，用 mock 函数模拟：
 
 ```javascript
 const MAX_TURNS = 20;
@@ -630,7 +636,7 @@ while (turn < MAX_TURNS) {
   const response = await callModel(messages);
   totalOutput += response.outputTokens;
 
-  // 保险丝 2：Token 预算（只在输出 > 5000 后检查递减回报）
+  // 第二层防御：Token 预算（只在输出 > 5000 后检查递减回报）
   if (totalOutput > 5000) {
     if (response.outputTokens < 500) lowStreak++;
     else lowStreak = 0;
@@ -649,7 +655,7 @@ while (turn < MAX_TURNS) {
       const fp = fingerprint(toolCall.name, toolCall.params);
       const result = await executeTool(toolCall);
 
-      // 保险丝 1：死循环检测
+      // 第一层防御：死循环检测
       const prev = callHistory.get(fp) || { count: 0, lastResult: '' };
       const resultFp = fingerprint('result', result);
       if (prev.lastResult === resultFp) {
@@ -666,7 +672,7 @@ while (turn < MAX_TURNS) {
     }
   }
 
-  // 保险丝 3：截断恢复（渐进式）
+  // 第三层防御：截断恢复（渐进式）
   if (response.stopReason === 'max_tokens') {
     recoveryCount++;
     if (recoveryCount > 3) break; // 认栽
@@ -681,13 +687,11 @@ while (turn < MAX_TURNS) {
 }
 ```
 
-试试去掉某几根保险丝，看会发生什么。
+试试去掉某层防御，看会发生什么。比如：
 
-### 讨论
-
-1. 如果你要**同时让 10 个 Agent 干 10 件不同的事**——一个写代码，一个跑测试，一个查文档，一个做 code review——你怎么管理它们？怎么让它们不互相打架？一个挂了怎么不影响其他？
-2. 这些容错和保险丝机制，应该由**框架**来做（比如 `OpenClaw`、`LangGraph`），还是由**开发者**自己在业务层做？各自的优势和风险是什么？
-3. 今天讲的"保险丝"都是**反应式**的——出了问题才处理。有没有可能做到**预防式**的——在问题还没发生的时候就预判到？比如通过分析 Agent 的行为模式提前干预。
+- 把 `MAX_TURNS` 改成 `Infinity`，然后让 mock 的 `callModel` 永远返回工具调用——观察死循环检测什么时候介入。
+- 把死循环检测的阈值从 20 调到 `Infinity`，看 Token 预算什么时候兜底。
+- 两个都去掉——感受一下"失控"是什么体验（放心，mock 函数不会真的烧钱）。
 
 ---
 

@@ -1,7 +1,7 @@
 /**
  * @title Agent Loop 完整骨架
  * @group 运行时安全
- * @description 带全部三根保险丝的完整 Agent Loop 骨架
+ * @description 带全部三层防御的完整 Agent Loop 骨架
  */
 
 import { createHash } from 'node:crypto';
@@ -10,12 +10,12 @@ import { allTools } from '../lib/mock-tools.mjs';
 import { streamText } from 'ai';
 
 // ============================================================================
-// Agent Loop 完整骨架 — 三根保险丝
+// Agent Loop 完整骨架 — 三层防御
 //
 // 这是教学材料的综合案例，将前面所有运行时安全机制整合在一起：
-//   保险丝 1: 死循环检测 — fingerprint + 滑动窗口计数
-//   保险丝 2: Token 预算  — 90% nudge + 递减回报检测
-//   保险丝 3: 截断恢复   — 渐进式恢复消息
+//   第一层防御: 死循环检测 — fingerprint + 滑动窗口计数
+//   第二层防御: Token 预算  — 90% nudge + 递减回报检测
+//   第三层防御: 截断恢复   — 渐进式恢复消息
 //
 // 模拟场景: Agent 被要求"找到并移除项目中所有 console.log"
 // ============================================================================
@@ -37,7 +37,7 @@ async function consumeResult(result) {
 }
 
 console.log('='.repeat(60));
-console.log('案例 12: Agent Loop 完整骨架（三根保险丝）');
+console.log('案例 12: Agent Loop 完整骨架（三层防御）');
 console.log('='.repeat(60));
 console.log();
 console.log('场景: 找到并移除项目中所有 console.log');
@@ -75,7 +75,7 @@ function resultHash(result) {
 }
 
 // ============================================================================
-// 保险丝 1: 死循环检测
+// 第一层防御: 死循环检测
 // ============================================================================
 function checkLoop(toolName, params, result) {
   const fp = fingerprint(toolName, params);
@@ -112,7 +112,7 @@ function checkLoop(toolName, params, result) {
 }
 
 // ============================================================================
-// 保险丝 2: Token 预算检测
+// 第二层防御: Token 预算检测
 // ============================================================================
 function checkBudget(outputThisTurn) {
   totalOutput += outputThisTurn;
@@ -147,7 +147,7 @@ function checkBudget(outputThisTurn) {
 }
 
 // ============================================================================
-// 保险丝 3: 截断恢复消息
+// 第三层防御: 截断恢复消息
 // ============================================================================
 const recoveryMessages = [
   '直接从断点继续——不要道歉，不要回顾。把剩余工作拆成更小的块。',
@@ -256,19 +256,19 @@ for (let t = 1; t <= MAX_TURNS && !stopped; t++) {
 
             console.log(`  工具结果: ${toolResult.slice(0, 80)}${toolResult.length > 80 ? '...' : ''}`);
 
-            // 保险丝 1: 死循环检测
+            // 第一层防御: 死循环检测
             // tc.args 可能是对象也可能是字符串，统一处理
             const parsedArgs = typeof tc.args === 'string' ? JSON.parse(tc.args) : tc.args;
             const loopResult = checkLoop(tc.toolName, parsedArgs, toolResult);
             if (loopResult) {
-              console.log(`  [保险丝1] ${loopResult.message}`);
+              console.log(`  [第一层] ${loopResult.message}`);
               if (loopResult.level === 'break') {
                 stopped = true;
                 stopReason = loopResult.message;
                 break;
               } else if (loopResult.level === 'critical') {
                 // 阻断工具，Agent 收到错误（这里只打印警告）
-                console.log(`  [保险丝1] 阻断此次工具调用，Agent 会收到错误`);
+                console.log(`  [第一层] 阻断此次工具调用，Agent 会收到错误`);
               }
             }
           }
@@ -276,7 +276,7 @@ for (let t = 1; t <= MAX_TURNS && !stopped; t++) {
       }
     }
 
-    // 保险丝 2: Token 预算检测
+    // 第二层防御: Token 预算检测
     const outputThisTurn = usage.completionTokens;
     const budgetCheck = checkBudget(outputThisTurn);
 
@@ -285,34 +285,34 @@ for (let t = 1; t <= MAX_TURNS && !stopped; t++) {
     console.log(`  Token: 输入 ${usage.promptTokens}, 输出 ${outputThisTurn}, 累计 ${totalUsed}/${TOKEN_BUDGET} (${budgetRatio}%)`);
 
     if (budgetCheck.nudge) {
-      console.log(`  [保险丝2] nudge: "${budgetCheck.nudge}"`);
+      console.log(`  [第二层] nudge: "${budgetCheck.nudge}"`);
       currentPrompt = budgetCheck.nudge;
     }
 
     if (budgetCheck.diminishing) {
-      console.log(`  [保险丝2] 递减回报检测: 连续 ${lowStreak} 次输出 < ${DIMINISHING_THRESHOLD} Token`);
+      console.log(`  [第二层] 递减回报检测: 连续 ${lowStreak} 次输出 < ${DIMINISHING_THRESHOLD} Token`);
       stopped = true;
       stopReason = 'Token 递减回报检测触发';
       break;
     }
 
     if (budgetCheck.budgetExceeded) {
-      console.log(`  [保险丝2] Token 预算耗尽`);
+      console.log(`  [第二层] Token 预算耗尽`);
       stopped = true;
       stopReason = 'Token 预算耗尽';
       break;
     }
 
-    // 保险丝 3: 截断恢复
+    // 第三层防御: 截断恢复
     if (finishReason === 'length') {
       recoveryCount++;
-      console.log(`  [保险丝3] 输出被截断! (第 ${recoveryCount} 次恢复)`);
+      console.log(`  [第三层] 输出被截断! (第 ${recoveryCount} 次恢复)`);
       if (recoveryCount <= MAX_RECOVERY) {
         const msg = recoveryMessages[Math.min(recoveryCount - 1, recoveryMessages.length - 1)];
-        console.log(`  [保险丝3] 注入恢复消息: "${msg}"`);
+        console.log(`  [第三层] 注入恢复消息: "${msg}"`);
         currentPrompt = msg;
       } else {
-        console.log(`  [保险丝3] 恢复次数已达上限，返回不完整结果`);
+        console.log(`  [第三层] 恢复次数已达上限，返回不完整结果`);
         stopped = true;
         stopReason = '截断恢复失败';
         break;
@@ -346,9 +346,9 @@ console.log(`  Token 预算: ${TOKEN_BUDGET} (${((totalInput + totalOutput) / TO
 console.log(`  恢复次数: ${recoveryCount}`);
 console.log();
 
-// 显示三根保险丝的状态
-console.log('三根保险丝状态:');
-console.log(`  保险丝 1 (死循环检测):`);
+// 显示三层防御的状态
+console.log('三层防御状态:');
+console.log(`  第一层 (死循环检测):`);
 
 let maxRepeat = 0;
 let repeatTool = '';
@@ -365,13 +365,13 @@ if (maxRepeat >= WARNING_THRESHOLD) {
   console.log(`    状态: 正常`);
 }
 
-console.log(`  保险丝 2 (Token 预算):`);
+console.log(`  第二层 (Token 预算):`);
 const totalUsedFinal = totalInput + totalOutput;
 console.log(`    已用: ${totalUsedFinal} / ${TOKEN_BUDGET} (${(totalUsedFinal / TOKEN_BUDGET * 100).toFixed(1)}%)`);
 console.log(`    递减回报: ${lowStreak} 次低输出`);
 console.log(`    状态: ${totalUsedFinal >= TOKEN_BUDGET ? '超预算' : lowStreak >= 2 ? '递减回报' : '正常'}`);
 
-console.log(`  保险丝 3 (截断恢复):`);
+console.log(`  第三层 (截断恢复):`);
 console.log(`    恢复次数: ${recoveryCount} / ${MAX_RECOVERY}`);
 console.log(`    状态: ${recoveryCount >= MAX_RECOVERY ? '恢复失败' : recoveryCount > 0 ? '已恢复' : '未触发'}`);
 
@@ -384,8 +384,8 @@ console.log('  const callHistory = new Map();');
 console.log();
 console.log('  for (turn = 1; turn <= MAX_TURNS; turn++) {');
 console.log('    // 1. 调用模型，获取响应');
-console.log('    // 2. 执行工具调用，检查死循环检测 (保险丝 1)');
-console.log('    // 3. 检查 Token 预算 + nudge (保险丝 2)');
-console.log('    // 4. 检查截断恢复 (保险丝 3)');
+console.log('    // 2. 执行工具调用，检查死循环检测 (第一层)');
+console.log('    // 3. 检查 Token 预算 + nudge (第二层)');
+console.log('    // 4. 检查截断恢复 (第三层)');
 console.log('    // 5. 如果 finishReason === "stop"，结束');
 console.log('  }');

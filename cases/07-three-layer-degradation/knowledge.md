@@ -39,3 +39,21 @@ const layer2MaxAttempts = Math.min(NON_STREAM_RETRY_MAX, remainingBudget);
 
 - 如果你同时接了多家 API 提供商（Anthropic + OpenAI + Google），你会按什么顺序 failover？优先兄弟模型还是优先跨 Provider？
 - 三层降级的每一层都有时间成本，如何平衡"降级速度"和"重试机会"？
+
+## 兄弟模型 Failover
+
+三层降级链是在**同一个 Provider 内部**做文章。但如果整个 Provider 都挂了呢？
+
+Sonnet 4.6 限流了，先试同 Provider 的 Sonnet 4.5 或 Haiku——API 速率限制通常按模型区分，Sonnet 4.6 满了不代表 Haiku 也满了。兄弟模型切换成本远低于跨 Provider：消息格式一致，上下文不需要转换。
+
+但只有 `rate_limit` 和 `overloaded` 才值得走兄弟模型。`billing` 和 `auth` 是 Provider 级别的问题，同一家的其他模型也一样不可用。
+
+## 多 Provider 容灾
+
+如果同时接了多家 API 提供商（Anthropic、OpenAI、Google、本地 Ollama），回旋空间更大：
+
+- **临时故障 vs 持久故障**：限流过载走指数退避（1min → 5min → 25min，封顶 1hr）；账户欠费或密钥失效退避基数直接拉到 5hr——这种故障需要人工介入
+- **Failover 优先级**：兄弟模型优先于跨 Provider，因为上下文不需要转换
+- **跨 Provider 挑战**：消息格式不同，需要做上下文适配
+
+核心原则：能用同 Provider 内的兄弟模型解决，就不要跨 Provider——转换成本高、延迟大、上下文可能丢失细节。

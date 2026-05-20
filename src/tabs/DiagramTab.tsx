@@ -11,6 +11,7 @@ import mermaid from 'mermaid';
 
 interface DiagramTabProps {
   diagramMmd: string | null;
+  diagramHtml: string | null;
 }
 
 let mermaidInitialized = false;
@@ -38,7 +39,24 @@ function ensureMermaidInit() {
   mermaidInitialized = true;
 }
 
-export default function DiagramTab({ diagramMmd }: DiagramTabProps) {
+export default function DiagramTab({ diagramMmd, diagramHtml }: DiagramTabProps) {
+  // If HTML diagram is available, render it via iframe
+  if (diagramHtml) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#1e1e1e' }}>
+        <iframe
+          srcDoc={diagramHtml}
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          sandbox="allow-scripts"
+        />
+      </div>
+    );
+  }
+
+  return <MermaidDiagram diagramMmd={diagramMmd} />;
+}
+
+function MermaidDiagram({ diagramMmd }: { diagramMmd: string | null }) {
   const [svgHtml, setSvgHtml] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);

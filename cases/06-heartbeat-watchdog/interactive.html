@@ -49,9 +49,11 @@ svg{flex:1;width:100%}
     <button class="active" id="btnNormal" onclick="startScenario('normal')">正常运行</button>
     <button id="btnSilent" onclick="startScenario('silent')">沉默故障</button>
     <button id="btnRecovery" onclick="startScenario('recovery')">恢复对账</button>
+    <button id="btnPartial" onclick="startScenario('partial')">半成品处理</button>
     <button onclick="stopAll()">停止</button>
     <span class="status" id="statusText">选择场景开始模拟</span>
   </div>
+  <div class="next-steps" id="nextSteps" style="display:none;padding:8px 12px;margin-top:4px;border-left:3px solid #8b5cf6;background:#1a1a2e;font-size:12px;border-radius:0 4px 4px 0"></div>
   <div class="sliders">
     <div class="slider-group">
       <label>心跳间隔:</label>
@@ -120,6 +122,7 @@ function stopAll() {
   timers.forEach(t => clearInterval(t));
   timers.forEach(t => clearTimeout(t));
   timers = [];
+  document.getElementById('nextSteps').style.display = 'none';
   document.getElementById('statusText').textContent = '已停止';
   document.getElementById('connStatus').textContent = '已断开';
   document.getElementById('connStatus').style.color = '#858585';
@@ -135,6 +138,7 @@ function startScenario(type) {
   stopAll();
   events = [];
   document.getElementById('eventLog').innerHTML = '';
+  document.getElementById('nextSteps').style.display = 'none';
   running = true;
   startTime = Date.now();
   lastData = Date.now();
@@ -144,7 +148,7 @@ function startScenario(type) {
   if (type === 'normal') {
     setActiveBtn('btnNormal');
     document.getElementById('statusText').textContent = '正常运行: 心跳+数据持续推送';
-    addLog('连接建立，开始接收数据', 'log-info');
+    addLog('连接建立。回顾案例 05：指数退避处理的是明确报错的场景，但连接没报错呢？开始接收数据...', 'log-info');
     startNormal();
   } else if (type === 'silent') {
     setActiveBtn('btnSilent');
@@ -156,6 +160,11 @@ function startScenario(type) {
     document.getElementById('statusText').textContent = '恢复对账: 断开后重连并验证数据';
     addLog('连接建立', 'log-info');
     startRecovery();
+  } else if (type === 'partial') {
+    setActiveBtn('btnPartial');
+    document.getElementById('statusText').textContent = '半成品处理: 中断后分析已接收内容';
+    addLog('连接建立，开始接收混合内容（文本+工具调用）', 'log-info');
+    startPartial();
   }
 
   const checkTimer = setInterval(() => {
@@ -272,11 +281,65 @@ function startRecovery() {
         document.getElementById('connStatus').textContent = '已恢复';
         document.getElementById('connStatus').style.color = '#f59e0b';
         document.getElementById('statusText').textContent = '对账恢复完成';
+        const ns = document.getElementById('nextSteps');
+        ns.style.display = 'block';
+        ns.innerHTML = '<div style="color:#8b5cf6;font-weight:bold;margin-bottom:4px">对账恢复能救一次，但反复失败怎么办？</div><div style="color:#cccccc">→ 案例 07：三层降级链 —— 流式重试 → 非流式降级 → 模型降级</div>';
       }, 2000);
       timers.push(recoveryTimer);
     }, timeoutThreshold);
     timers.push(detectTimer);
   }, 2500);
+  timers.push(stopTimer);
+}
+
+function startPartial() {
+  let textCount = 0;
+  const dTimer = setInterval(() => {
+    if (!running) return;
+    textCount++;
+    feedData('data', `text${textCount}`);
+    addLog(`收到文本片段 #${textCount}`, 'log-data');
+  }, dataInterval);
+  timers.push(dTimer);
+
+  const hTimer = setInterval(() => {
+    if (!running) return;
+    feedData('heartbeat', '♥');
+  }, heartbeatInterval);
+  timers.push(hTimer);
+
+  const tool1Timer = setTimeout(() => {
+    if (!running) return;
+    feedData('data', 'tool1');
+    addLog('[完整工具调用] read_file("src/index.ts") → 保留', 'log-data');
+  }, 800);
+  timers.push(tool1Timer);
+
+  const tool2Timer = setTimeout(() => {
+    if (!running) return;
+    feedData('data', 'tool2');
+    addLog('[完整工具调用] list_dir("src/") → 保留', 'log-data');
+  }, 1400);
+  timers.push(tool2Timer);
+
+  const stopTimer = setTimeout(() => {
+    clearInterval(dTimer);
+    clearInterval(hTimer);
+    addLog('*** 连接中断 — 正在传输第 3 个工具调用时断开 ***', 'log-timeout');
+    events.push({ time: Date.now() - startTime, type: 'stop', label: '中断' });
+
+    const detectTimer = setTimeout(() => {
+      if (!running) return;
+      addLog(`超时检测: ${timeoutThreshold}ms 无数据`, 'log-timeout');
+      addLog('--- 半成品分析 ---', 'log-recovery');
+      addLog('半成品分析: 2 个完整工具调用 → 保留可执行', 'log-recovery');
+      addLog('1 个不完整 JSON 碎片 → 丢弃', 'log-timeout');
+      addLog(`已显示文本 ${Math.min(textCount, 3)} 段 → 保留（删掉更困惑）`, 'log-recovery');
+      addLog('重试前: 对已执行的 2 个工具调用做去重标记', 'log-recovery');
+      document.getElementById('statusText').textContent = '半成品分析完成';
+    }, timeoutThreshold);
+    timers.push(detectTimer);
+  }, 2000);
   timers.push(stopTimer);
 }
 

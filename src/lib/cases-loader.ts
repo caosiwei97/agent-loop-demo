@@ -69,7 +69,7 @@ export async function casesLoader() {
       files,
       content: {
         knowledge: hasFile('knowledge.md'),
-        diagram: hasFile('diagram.mmd'),
+        diagram: hasFile('diagram.html') || hasFile('diagram.mmd'),
         interactive: hasFile('interactive.html'),
         mindmap: hasFile('mindmap.md'),
         excalidraw: !!excalidrawScene,
@@ -77,6 +77,7 @@ export async function casesLoader() {
       indexSource,
       knowledgeMd: hasFile('knowledge.md') ? readFile('knowledge.md') : null,
       diagramMmd: hasFile('diagram.mmd') ? readFile('diagram.mmd') : null,
+      diagramHtml: hasFile('diagram.html') ? readFile('diagram.html') : null,
       mindmapMd: hasFile('mindmap.md') ? readFile('mindmap.md') : null,
       interactiveHtml: hasFile('interactive.html') ? readFile('interactive.html') : null,
       excalidrawScene,
