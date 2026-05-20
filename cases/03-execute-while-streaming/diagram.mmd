@@ -1,25 +1,31 @@
 sequenceDiagram
-    participant Model as LLM 模型
-    participant Agent as Agent Runtime
+    participant U as 用户
+    participant R as Agent Runtime
+    participant API as LLM API
     participant T1 as Tool: Read A
     participant T2 as Tool: Read B
     participant T3 as Tool: Read C
 
-    Note over Model,Agent: 模型开始流式输出
-    Model->>Agent: 文本块："好的，我来帮你看一下..."
+    U->>R: 1.1 "帮我看看这三个文件"
+    R->>API: 1.2 组装 Prompt + 发起 SSE 请求
 
-    rect rgba(78, 201, 176, 0.12)
-        Note right of Model: 边说边执行模式
-        Model-->>Agent: tool_call_1 (Read A) 完成
-        Agent->>T1: 立即执行 Read A
-        Model-->>Agent: tool_call_2 (Read B) 完成
-        Agent->>T2: 立即执行 Read B
-        T1-->>Agent: A 的结果返回
-        Model-->>Agent: tool_call_3 (Read C) 完成
-        Agent->>T3: 立即执行 Read C
-        T2-->>Agent: B 的结果返回
-        T3-->>Agent: C 的结果返回
-    end
+    Note over API,R: 流式响应开始
+    API-->>R: 2.1 文本 token："好的，我来看看..."
+    R-->>U: 2.2 实时显示文字
 
-    Note over Model: 所有 tool_call 生成完毕
-    Model->>Agent: 分析结果，输出总结
+    Note right of API: 工具块完成即执行
+    API-->>R: 3.1 tool_call_1 JSON 拼接完成
+    R->>T1: 3.2 立即执行 Read A
+    API-->>R: 3.3 tool_call_2 JSON 拼接完成
+    R->>T2: 3.4 立即执行 Read B
+    T1-->>R: 3.5 A 结果返回
+    API-->>R: 3.6 tool_call_3 JSON 拼接完成
+    R->>T3: 3.7 立即执行 Read C
+    T2-->>R: 3.8 B 结果返回
+    T3-->>R: 3.9 C 结果返回
+
+    Note over API,R: stop_reason = "tool_use"，SSE 流结束
+    R->>API: 4.1 带三个 tool_result 发起新 SSE 请求
+    API-->>R: 4.2 流式输出分析结果
+    R-->>U: 4.3 实时显示总结
+    Note over API,R: stop_reason = "end_turn"，循环结束

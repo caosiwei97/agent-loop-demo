@@ -9,6 +9,14 @@
 html,body{height:100%;background:#1e1e1e;color:#cccccc;font-family:'Courier New',monospace;overflow:hidden}
 .container{display:flex;flex-direction:column;height:100%;padding:16px;gap:10px}
 h2{color:#569cd6;font-size:16px}
+
+.tabs{display:flex;gap:2px;border-bottom:1px solid #333}
+.tab{padding:8px 16px;font-size:12px;cursor:pointer;border-radius:4px 4px 0 0;background:#252526;color:#858585;border:1px solid transparent;border-bottom:none;font-family:inherit}
+.tab:hover{color:#cccccc;background:#2d2d2d}
+.tab.active{background:#1e1e1e;color:#569cd6;border-color:#333;border-bottom-color:#1e1e1e;position:relative;top:1px}
+.tab-content{display:none;flex:1;overflow:hidden;flex-direction:column;gap:10px}
+.tab-content.active{display:flex}
+
 .controls{display:flex;gap:8px;align-items:center}
 button{background:#0e639c;color:#fff;border:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px}
 button:hover{background:#1177bb}
@@ -22,6 +30,14 @@ button:disabled{background:#333;color:#777;cursor:not-allowed}
 .sse-block.block-start{border-left-color:#c586c0}
 .sse-block.block-delta{border-left-color:#dcdcaa}
 .sse-block.block-stop{border-left-color:#22c55e}
+.sse-block.block-msg{border-left-color:#4a9eed}
+.sse-block.block-exec{border-left-color:#22c55e;color:#22c55e}
+.sse-block.block-res{border-left-color:#dcdcaa;color:#dcdcaa}
+.sse-block.block-phase{border-left-color:#4a9eed;color:#a5d8ff;text-align:center;font-size:12px;font-weight:bold;padding:8px}
+.sse-block.block-end{border-left-color:#f44747;color:#f44747;font-weight:bold;font-size:12px;padding:8px;background:#3c1a1a}
+.exec-badge{display:inline-block;background:#2a4a2a;color:#22c55e;padding:1px 6px;border-radius:2px;font-size:10px;font-weight:bold;margin-right:6px}
+.res-badge{display:inline-block;background:#3a3a1a;color:#dcdcaa;padding:1px 6px;border-radius:2px;font-size:10px;font-weight:bold;margin-right:6px}
+.end-badge{display:inline-block;background:#3c1a1a;color:#f44747;padding:1px 6px;border-radius:2px;font-size:10px;font-weight:bold;margin-right:6px}
 .sse-key{color:#ce9178}
 .sse-val{color:#6a9955}
 
@@ -40,39 +56,127 @@ button:disabled{background:#333;color:#777;cursor:not-allowed}
 .stats{display:flex;gap:16px;font-size:11px;color:#858585;border-top:1px solid #333;padding-top:6px}
 .stat-val{color:#dcdcaa}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.pipe-layout{display:flex;flex:1;gap:12px;overflow:hidden}
+.pipe-left{flex:55;display:flex;flex-direction:column;overflow:hidden;border:1px solid #333;border-radius:6px;padding:10px}
+.pipe-right{flex:45;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+
+.pipe-tl-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.pipe-timeline{flex:1;overflow-y:auto}
+
+.tl-row{display:flex;align-items:flex-start;margin:3px 0;animation:fadeIn .3s;font-size:11px;line-height:1.6;border-left:3px solid #444;padding:4px 8px;border-radius:0 3px 3px 0;background:#252526}
+.tl-row.type-sse{border-left-color:#4a9eed}
+.tl-row.type-ok{border-left-color:#22c55e}
+.tl-row.type-res{border-left-color:#dcdcaa}
+.tl-row.type-end{border-left-color:#c586c0}
+.tl-row.type-text{border-left-color:#858585}
+.tl-badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:10px;margin-right:6px;font-weight:bold;min-width:36px;text-align:center}
+.tl-badge.badge-sse{background:#2a4a6b;color:#a5d8ff}
+.tl-badge.badge-ok{background:#2a4a2a;color:#b2f2bb}
+.tl-badge.badge-res{background:#3a3a1a;color:#dcdcaa}
+.tl-badge.badge-end{background:#3a2a4a;color:#c586c0}
+.tl-badge.badge-text{background:#333;color:#858585}
+.tl-time{color:#858585;min-width:48px;text-align:right;margin-right:8px;font-size:10px;flex-shrink:0}
+.tl-text{color:#cccccc;flex:1}
+
+.json-panel{border:1px solid #333;border-radius:6px;padding:10px;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.json-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.json-buffer{color:#dcdcaa;font-size:12px;min-height:40px;word-break:break-all;background:#252526;padding:8px;border-radius:3px;flex:1;overflow-y:auto;line-height:1.5;font-family:'Courier New',monospace}
+.json-flash{animation:jsonFlash .2s}
+.json-done{color:#22c55e;background:#1a3c1a;border-color:#22c55e}
+@keyframes jsonFlash{0%{background:#3a3a1a}100%{background:#252526}}
+
+.cards-panel{border:1px solid #333;border-radius:6px;padding:10px;display:flex;flex-direction:column;overflow-y:auto}
+.cards-title{color:#569cd6;font-size:11px;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.tool-card{padding:6px 10px;border-radius:4px;margin-bottom:4px;font-size:11px;border:1px solid #444;background:#252526;display:flex;justify-content:space-between;align-items:center;transition:all .3s}
+.tool-card.state-waiting{color:#555;border-color:#444}
+.tool-card.state-executing{color:#b2f2bb;border-color:#22c55e;animation:pulse 1s infinite}
+.tool-card.state-done{color:#22c55e;background:#1a3c1a;border-color:#22c55e}
+.tool-card .tc-name{font-weight:bold}
+.tool-card .tc-args{color:#858585;font-size:10px;margin-left:4px}
+.tool-card .tc-status{font-size:10px}
+.tool-card .tc-result{color:#22c55e;font-size:10px;margin-left:8px}
+@keyframes pulse{0%,100%{box-shadow:0 0 2px #22c55e}50%{box-shadow:0 0 8px #22c55e}}
+
+.pipe-controls{display:flex;gap:8px;align-items:center}
+.speed-btn{padding:4px 10px;font-size:11px}
+.speed-btn.active{background:#1177bb;box-shadow:0 0 4px #1177bb}
+.pipe-stats{display:flex;gap:16px;font-size:11px;color:#858585;border-top:1px solid #333;padding-top:6px}
+.pipe-stats .ps-good{color:#22c55e}
+.pipe-stats .ps-val{color:#dcdcaa}
 </style>
 </head>
 <body>
 <div class="container">
   <h2>Tool Call 碎片拼接模拟器</h2>
-  <div class="controls">
-    <button id="btnNext" onclick="nextStep()">下一步</button>
-    <button id="btnAuto" onclick="autoPlay()">自动播放</button>
-    <button onclick="resetAll()">重置</button>
-    <span class="status" id="statusText">模拟 Claude API 中 tool_use 的 input_json_delta 碎片拼接</span>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab(0)">单工具拼接</div>
+    <div class="tab" onclick="switchTab(1)">多工具流水线</div>
   </div>
-  <div class="main">
-    <div class="panel">
-      <div class="panel-title">原始 SSE 事件流</div>
-      <div id="eventList"></div>
+
+  <div class="tab-content active" id="tab0">
+    <div class="controls">
+      <button id="btnNext" onclick="nextStep()">下一步</button>
+      <button id="btnAuto" onclick="autoPlay()">自动播放</button>
+      <button onclick="resetAll()">重置</button>
+      <span class="status" id="statusText">模拟 Claude API 中 tool_use 的 input_json_delta 碎片拼接</span>
     </div>
-    <div class="panel">
-      <div class="panel-title">碎片拼接过程</div>
-      <div class="buffer-section">
-        <div class="buffer-label">累积缓冲区</div>
-        <div class="buffer-content" id="bufferContent">（等待碎片到达）</div>
+    <div class="main">
+      <div class="panel">
+        <div class="panel-title">原始 SSE 事件流</div>
+        <div id="eventList"></div>
       </div>
-      <div id="parseStatus"></div>
-      <div id="finalResult"></div>
+      <div class="panel">
+        <div class="panel-title">碎片拼接过程</div>
+        <div class="buffer-section">
+          <div class="buffer-label">累积缓冲区</div>
+          <div class="buffer-content" id="bufferContent">（等待碎片到达）</div>
+        </div>
+        <div id="parseStatus"></div>
+        <div id="finalResult"></div>
+      </div>
+    </div>
+    <div class="stats">
+      <span>步骤: <span class="stat-val" id="statStep">0/6</span></span>
+      <span>累积字节: <span class="stat-val" id="statBytes">0</span></span>
+      <span>可解析: <span class="stat-val" id="statParsable">否</span></span>
     </div>
   </div>
-  <div class="stats">
-    <span>步骤: <span class="stat-val" id="statStep">0/6</span></span>
-    <span>累积字节: <span class="stat-val" id="statBytes">0</span></span>
-    <span>可解析: <span class="stat-val" id="statParsable">否</span></span>
+
+  <div class="tab-content" id="tab1">
+    <div class="pipe-controls">
+      <button id="pipeStart" onclick="pipeRun()">开始</button>
+      <button class="speed-btn" id="spd05" onclick="pipeSpeed(0.5)">0.5x</button>
+      <button class="speed-btn active" id="spd1" onclick="pipeSpeed(1)">1x</button>
+      <button class="speed-btn" id="spd15" onclick="pipeSpeed(1.5)">1.5x</button>
+      <button onclick="pipeReset()">重置</button>
+      <span class="status" id="pipeStatus">点击开始，观看多工具 SSE 流水线实时拼装与执行</span>
+    </div>
+    <div class="pipe-layout">
+      <div class="pipe-left">
+        <div class="pipe-tl-title">SSE 事件 + 执行结果 时间线</div>
+        <div class="pipe-timeline" id="pipeTimeline"></div>
+      </div>
+      <div class="pipe-right">
+        <div class="json-panel">
+          <div class="json-title">JSON 拼接缓冲区</div>
+          <div class="json-buffer" id="jsonBuffer">（等待 SSE 碎片）</div>
+        </div>
+        <div class="cards-panel">
+          <div class="cards-title">工具执行状态</div>
+          <div id="toolCardsContainer"></div>
+        </div>
+      </div>
+    </div>
+    <div class="pipe-stats" id="pipeStats"></div>
   </div>
 </div>
 <script>
+function switchTab(idx){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+  document.querySelectorAll('.tab-content').forEach((t,i)=>t.classList.toggle('active',i===idx));
+}
+
 const steps = [
   {
     type: 'block-start',
@@ -144,12 +248,11 @@ function nextStep() {
   document.getElementById('bufferContent').textContent = accumulated || '（空）';
   document.getElementById('statBytes').textContent = accumulated.length;
 
-  // Try parse
   const ps = document.getElementById('parseStatus');
   if (accumulated) {
     try {
       const parsed = JSON.parse(accumulated);
-      ps.innerHTML = `<div class="parse-status parse-ok">✓ JSON.parse() 成功</div>`;
+      ps.innerHTML = `<div class="parse-status parse-ok">&#10003; JSON.parse() 成功</div>`;
       document.getElementById('statParsable').textContent = '是';
 
       if (step === steps.length - 1) {
@@ -163,7 +266,7 @@ function nextStep() {
           </div>`;
       }
     } catch(e) {
-      ps.innerHTML = `<div class="parse-status parse-fail">✗ JSON.parse() 失败: ${e.message}</div>`;
+      ps.innerHTML = `<div class="parse-status parse-fail">&#10007; JSON.parse() 失败: ${escHtml(e.message)}</div>`;
       document.getElementById('statParsable').textContent = '否';
     }
   }
@@ -203,6 +306,280 @@ function resetAll() {
   document.getElementById('btnAuto').disabled = false;
   document.getElementById('btnAuto').textContent = '自动播放';
 }
+
+const pipelineSteps = [
+  { t: 0, type: 'phase', text: 'SSE 请求 #1: 用户发送消息' },
+  { t: 400, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:0,content_block:{type:'text',text:''}} },
+  { t: 1000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'好的，我先看看项目里的 ESLint 错误...'}} },
+  { t: 1600, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'让我检查这几个文件——'}} },
+  { t: 2000, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:0} },
+  { t: 2400, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:1,content_block:{type:'tool_use',id:'toolu_01',name:'read_file',input:{}}} },
+  { t: 3000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"file'}}, jsonFragment: '{"file' },
+  { t: 3200, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'_path": "'}}, jsonFragment: '_path": "' },
+  { t: 3400, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'src/uti'}}, jsonFragment: 'src/uti' },
+  { t: 3600, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'ls.ts"}'}}, jsonFragment: 'ls.ts"}' },
+  { t: 3800, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:1} },
+  { t: 3800, type: 'exec', toolId: 0, text: 'Read("src/utils.ts") 立即执行' },
+  { t: 4200, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:2,content_block:{type:'tool_use',id:'toolu_02',name:'read_file',input:{}}} },
+  { t: 4600, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'{"file'}}, jsonFragment: '{"file' },
+  { t: 4600, type: 'res', toolId: 0, text: 'Read("src/utils.ts") 返回! (23 lines)' },
+  { t: 5000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'_path": "src/api/auth.ts"}'}}, jsonFragment: '_path": "src/api/auth.ts"}' },
+  { t: 5200, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:2} },
+  { t: 5200, type: 'exec', toolId: 1, text: 'Read("src/api/auth.ts") 立即执行' },
+  { t: 5600, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:3,content_block:{type:'tool_use',id:'toolu_03',name:'read_file',input:{}}} },
+  { t: 6000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:3,delta:{type:'input_json_delta',partial_json:'{"file_path": "src/components/Bu'}}, jsonFragment: '{"file_path": "src/components/Bu' },
+  { t: 6000, type: 'res', toolId: 1, text: 'Read("src/api/auth.ts") 返回! (45 lines)' },
+  { t: 6400, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:3,delta:{type:'input_json_delta',partial_json:'tton.tsx"}'}}, jsonFragment: 'tton.tsx"}' },
+  { t: 6600, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:3} },
+  { t: 6600, type: 'exec', toolId: 2, text: 'Read("...Button.tsx") 立即执行' },
+  { t: 7000, type: 'sse', event: 'message_delta', data: {type:'message_delta',delta:{stop_reason:'tool_use'},usage:{output_tokens:284}} },
+  { t: 7200, type: 'sse', event: 'message_stop', data: {type:'message_stop'} },
+  { t: 7400, type: 'res', toolId: 2, text: 'Read("...Button.tsx") 返回! (31 lines)' },
+  { t: 8000, type: 'phase', text: 'SSE 请求 #2: 带 3 个 tool_result 发起新请求' },
+  { t: 8400, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:0,content_block:{type:'text',text:''}} },
+  { t: 8800, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'我看到几个问题：utils.ts 第3行有未使用变量...'}} },
+  { t: 9200, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:0} },
+  { t: 9600, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:1,content_block:{type:'tool_use',id:'toolu_04',name:'edit_file',input:{}}} },
+  { t: 10000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"file_path":"src/utils.ts",'}}, jsonFragment: '{"file_path":"src/utils.ts",' },
+  { t: 10200, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'"old":"let value = ","new":""}'}}, jsonFragment: '"old":"let value = ","new":""}' },
+  { t: 10400, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:1} },
+  { t: 10400, type: 'exec', toolId: 3, text: 'Edit("src/utils.ts") 开始执行 [写操作]' },
+  { t: 10600, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:2,content_block:{type:'tool_use',id:'toolu_05',name:'edit_file',input:{}}} },
+  { t: 11000, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'{"file_path":"src/api/auth.ts",'}}, jsonFragment: '{"file_path":"src/api/auth.ts",' },
+  { t: 11200, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:2,delta:{type:'input_json_delta',partial_json:'"old":": any","new":": User"}'}}, jsonFragment: '"old":": any","new":": User"}' },
+  { t: 11400, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:2} },
+  { t: 11800, type: 'res', toolId: 3, text: 'Edit("src/utils.ts") 完成' },
+  { t: 11800, type: 'exec', toolId: 4, text: 'Edit("src/api/auth.ts") 开始执行 [写操作]' },
+  { t: 12000, type: 'sse', event: 'message_delta', data: {type:'message_delta',delta:{stop_reason:'tool_use'}} },
+  { t: 12200, type: 'sse', event: 'message_stop', data: {type:'message_stop'} },
+  { t: 12600, type: 'res', toolId: 4, text: 'Edit("src/api/auth.ts") 完成' },
+  { t: 13000, type: 'phase', text: 'SSE 请求 #3: 带 2 个 tool_result 发起新请求' },
+  { t: 13400, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:0,content_block:{type:'text',text:''}} },
+  { t: 13800, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'两个文件已修复，重新检查...'}} },
+  { t: 14200, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:0} },
+  { t: 14400, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:1,content_block:{type:'tool_use',id:'toolu_06',name:'bash',input:{}}} },
+  { t: 14800, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:1,delta:{type:'input_json_delta',partial_json:'{"command":"npx eslint src/"}'}}, jsonFragment: '{"command":"npx eslint src/"}' },
+  { t: 15000, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:1} },
+  { t: 15000, type: 'exec', toolId: 5, text: 'Bash("npx eslint src/") 开始执行' },
+  { t: 15400, type: 'sse', event: 'message_delta', data: {type:'message_delta',delta:{stop_reason:'tool_use'}} },
+  { t: 15600, type: 'sse', event: 'message_stop', data: {type:'message_stop'} },
+  { t: 16000, type: 'res', toolId: 5, text: 'Bash 返回: 0 errors' },
+  { t: 16400, type: 'phase', text: 'SSE 请求 #4: 带 1 个 tool_result 发起新请求' },
+  { t: 16800, type: 'sse', event: 'content_block_start', data: {type:'content_block_start',index:0,content_block:{type:'text',text:''}} },
+  { t: 17200, type: 'sse', event: 'content_block_delta', data: {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'所有 ESLint 错误已修复'}} },
+  { t: 17600, type: 'sse', event: 'content_block_stop', data: {type:'content_block_stop',index:0} },
+  { t: 17800, type: 'sse', event: 'message_delta', data: {type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:156}} },
+  { t: 18000, type: 'sse', event: 'message_stop', data: {type:'message_stop'} },
+  { t: 18000, type: 'end', text: 'Agent Loop 结束 (stop_reason: end_turn)' },
+];
+
+const toolCards = [
+  { id: 0, name: 'Read', args: 'src/utils.ts', type: 'read' },
+  { id: 1, name: 'Read', args: 'src/api/auth.ts', type: 'read' },
+  { id: 2, name: 'Read', args: 'src/components/Button.tsx', type: 'read' },
+  { id: 3, name: 'Edit', args: 'src/utils.ts', type: 'write' },
+  { id: 4, name: 'Edit', args: 'src/api/auth.ts', type: 'write' },
+  { id: 5, name: 'Bash', args: 'npx eslint src/', type: 'bash' },
+];
+
+let pipeSpeedVal = 1;
+let pipeRunning = false;
+let pipeAbort = false;
+let pipeTimers = [];
+let jsonBufferStr = '';
+const STEP_BASE_DELAY = 500;
+
+function pipeSpeed(v) {
+  pipeSpeedVal = v;
+  document.getElementById('spd05').classList.toggle('active', v === 0.5);
+  document.getElementById('spd1').classList.toggle('active', v === 1);
+  document.getElementById('spd15').classList.toggle('active', v === 1.5);
+}
+
+function pipeInitCards() {
+  const c = document.getElementById('toolCardsContainer');
+  c.innerHTML = '';
+  toolCards.forEach(tc => {
+    const card = document.createElement('div');
+    card.className = 'tool-card state-waiting';
+    card.id = 'tc-' + tc.id;
+    const typeLabel = tc.type === 'read' ? '[读]' : tc.type === 'write' ? '[写]' : '[执行]';
+    card.innerHTML = `<div><span class="tc-name">${escHtml(tc.name)}</span><span class="tc-args">${escHtml(tc.args)}</span></div><div><span class="tc-status">${typeLabel} 等待中</span></div>`;
+    c.appendChild(card);
+  });
+}
+
+function pipeSetCardState(id, state, result) {
+  const card = document.getElementById('tc-' + id);
+  if (!card) return;
+  card.className = 'tool-card state-' + state;
+  const tc = toolCards[id];
+  const typeLabel = tc.type === 'read' ? '[读]' : tc.type === 'write' ? '[写]' : '[执行]';
+  if (state === 'executing') {
+    card.querySelector('.tc-status').textContent = typeLabel + ' 执行中...';
+  } else if (state === 'done') {
+    const resText = result || '完成';
+    card.querySelector('.tc-status').textContent = typeLabel + ' ' + resText;
+  } else {
+    card.querySelector('.tc-status').textContent = typeLabel + ' 等待中';
+  }
+}
+
+function pipeAddTimelineRow(step) {
+  const tl = document.getElementById('pipeTimeline');
+  const timeStr = (step.t / 1000).toFixed(1) + 's';
+
+  if (step.type === 'sse') {
+    const block = document.createElement('div');
+    let cls = 'sse-block';
+    const ev = step.event;
+    if (ev === 'content_block_start') cls += ' block-start';
+    else if (ev === 'content_block_delta') cls += ' block-delta';
+    else if (ev === 'content_block_stop') cls += ' block-stop';
+    else if (ev === 'message_delta' || ev === 'message_stop') cls += ' block-msg';
+    block.className = cls;
+    const dataStr = JSON.stringify(step.data);
+    block.innerHTML = `<span class="sse-key">event:</span> <span class="sse-val">${escHtml(ev)}</span>\n<span class="sse-key">data:</span> <span class="sse-val">${escHtml(dataStr)}</span>`;
+    tl.appendChild(block);
+    block.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } else if (step.type === 'exec') {
+    const block = document.createElement('div');
+    block.className = 'sse-block block-exec';
+    block.innerHTML = `<span class="exec-badge">EXEC</span> <span>${escHtml(step.text)}</span>`;
+    tl.appendChild(block);
+    block.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } else if (step.type === 'res') {
+    const block = document.createElement('div');
+    block.className = 'sse-block block-res';
+    block.innerHTML = `<span class="res-badge">RES</span> <span>${escHtml(step.text)}</span>`;
+    tl.appendChild(block);
+    block.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } else if (step.type === 'phase') {
+    const block = document.createElement('div');
+    block.className = 'sse-block block-phase';
+    block.innerHTML = `<span>${escHtml(step.text)}</span>`;
+    tl.appendChild(block);
+    block.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } else if (step.type === 'end') {
+    const block = document.createElement('div');
+    block.className = 'sse-block block-end';
+    block.innerHTML = `<span class="end-badge">END</span> <span>${escHtml(step.text)}</span>`;
+    tl.appendChild(block);
+    block.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+}
+
+function pipeUpdateJsonBuffer(fragment, isComplete) {
+  const buf = document.getElementById('jsonBuffer');
+  if (fragment !== undefined && fragment !== '') {
+    jsonBufferStr += fragment;
+  }
+  if (isComplete) {
+    buf.textContent = jsonBufferStr;
+    buf.className = 'json-buffer json-done';
+    const captured = jsonBufferStr;
+    jsonBufferStr = '';
+    setTimeout(() => {
+      let parsed = '';
+      try { parsed = JSON.stringify(JSON.parse(captured), null, 2); } catch(e) { parsed = captured; }
+      buf.textContent = parsed;
+    }, 600);
+    setTimeout(() => {
+      buf.textContent = '（等待下一个 tool_call 碎片）';
+      buf.className = 'json-buffer';
+    }, 1200);
+  } else if (jsonBufferStr) {
+    buf.textContent = jsonBufferStr;
+    buf.className = 'json-buffer';
+    buf.classList.add('json-flash');
+    setTimeout(() => buf.classList.remove('json-flash'), 200);
+  }
+}
+
+function pipeRun() {
+  if (pipeRunning) return;
+  pipeReset();
+  pipeRunning = true;
+  pipeAbort = false;
+  document.getElementById('pipeStart').disabled = true;
+  document.getElementById('pipeStatus').textContent = '流水线运行中...';
+
+  pipeInitCards();
+
+  let lastT = 0;
+  let i = 0;
+  function scheduleNext() {
+    if (pipeAbort || i >= pipelineSteps.length) {
+      pipeRunning = false;
+      document.getElementById('pipeStart').disabled = false;
+      if (!pipeAbort) {
+        document.getElementById('pipeStatus').textContent = '流水线完成';
+        showPipeStats();
+      }
+      return;
+    }
+
+    const currentT = pipelineSteps[i].t;
+    const rawDelay = i === 0 ? 0 : ((currentT - lastT) / pipeSpeedVal);
+    const delay = i === 0 ? 0 : Math.max(STEP_BASE_DELAY, rawDelay);
+    lastT = currentT;
+
+    const timer = setTimeout(() => {
+      while (i < pipelineSteps.length && pipelineSteps[i].t === currentT) {
+        const s = pipelineSteps[i];
+        pipeAddTimelineRow(s);
+
+        if (s.type === 'exec') {
+          pipeSetCardState(s.toolId, 'executing');
+          pipeUpdateJsonBuffer(undefined, true);
+        }
+
+        if (s.type === 'res') {
+          const resultText = s.text.split('返回')[1] || s.text.split('完成')[0] || '';
+          pipeSetCardState(s.toolId, 'done', resultText.trim());
+        }
+
+        if (s.type === 'sse' && s.jsonFragment !== undefined) {
+          pipeUpdateJsonBuffer(s.jsonFragment, false);
+        }
+
+        i++;
+      }
+      scheduleNext();
+    }, delay);
+
+    pipeTimers.push(timer);
+  }
+
+  scheduleNext();
+}
+
+function showPipeStats() {
+  document.getElementById('pipeStats').innerHTML = `
+    <span>总耗时: <span class="ps-val">~18s</span> <span class="ps-val">(4 轮 SSE 请求)</span></span>
+    <span>读操作: <span class="ps-val">3 个</span> <span class="ps-good">(并行)</span></span>
+    <span>写操作: <span class="ps-val">2 个</span> <span class="ps-val">(串行)</span></span>
+    <span>对比 ReAct 串行: <span class="ps-good">~60s+</span></span>
+  `;
+}
+
+function pipeReset() {
+  pipeAbort = true;
+  pipeRunning = false;
+  pipeTimers.forEach(t => clearTimeout(t));
+  pipeTimers = [];
+  jsonBufferStr = '';
+  document.getElementById('pipeTimeline').innerHTML = '';
+  document.getElementById('jsonBuffer').textContent = '（等待 SSE 碎片）';
+  document.getElementById('jsonBuffer').className = 'json-buffer';
+  document.getElementById('toolCardsContainer').innerHTML = '';
+  document.getElementById('pipeStats').innerHTML = '';
+  document.getElementById('pipeStart').disabled = false;
+  document.getElementById('pipeStatus').textContent = '点击开始，观看多工具 SSE 流水线实时拼装与执行';
+  pipeAbort = false;
+}
+
+pipeInitCards();
 </script>
 </body>
 </html>

@@ -21,21 +21,23 @@ Observation: 完成                                ← 必须等结果回来
 ...重复 11 次
 ```
 
-每一步都在等——等模型想完、等工具返回。串行跑下来，光等待就要20 秒。这就是 `ReAct` 的"思考→行动→观察"三段循环，逻辑虽然清晰，但整个流程是串行执行的。
+每一步都在等：等模型想完、等工具返回，串行跑下来，光等待可能就要20 秒。这就是 `ReAct` 的"思考→行动→观察"三段循环，逻辑虽然清晰，但整个流程是串行执行的。
 
-如今用 Claude Code 来做，整个过程非常丝滑：文字流式输出，紧接着就是工具调用，读、改文件、然后读下一个文件，几乎感觉不到等待。LLM 还在生成第二个工具调用的参数时，第一个工具可能就已经执行完返回了。
+用 Claude Code 来做，整个过程却非常丝滑：文字流式输出，紧接着就是工具调用，读、改文件、然后读下一个文件，几乎感觉不到等待。LLM 还在生成第二个工具调用的参数时，第一个工具可能就已经执行完返回了。
 
 这不是模型变快了，是"边生成边执行"的调度在起作用。流式架构在串行链条的每一段里都插入了并行，把等待时间压到最小。
 
 这段体验的差距，不是模型能力的差距——正是 Agent Loop 架构的差距。以前的`ReAct` 是"想一步、做一步、等一步"；而如今的 Agent Loop 是"边想边做、该等的等、不该等的不等"。差距怎么产生的？靠的是三个核心机制：
 
-Agent Loop 三大核心机制
+Agent Loop 三大核心机制：
 
-1. **流式响应**——怎么让模型和工具"边说边干"？
-2. **容错机制**——`LLM API` 挂了怎么办？
-3. **运行时安全**——Agent 自己失控了怎么办？
+1. **流式响应**：怎么让模型和工具"边说边干"？
+2. **容错机制**：`LLM API` 挂了怎么办？
+3. **运行时安全**：Agent 自己失控了怎么办？
 
-Agent Loop 不只是"循环调模型"——它要管模型和工具怎么协作、`API` 挂了怎么活下来、Agent 自己跑飞了怎么拉回来。这就是我这篇文章要讲述的事情。
+Agent Loop 不只是"循环调模型"，它要管模型和工具怎么协作、`API` 挂了怎么活下来、Agent 自己跑飞了怎么拉回来。
+
+今天带大家看看这其中的奥秘~
 
 ---
 
@@ -112,18 +114,16 @@ sequenceDiagram
     API-->>R: 2.1 文本 token："好的，我来看看..."
     R-->>U: 2.2 实时显示文字
 
-    rect rgb(220, 240, 255)
-        Note right of API: 工具块完成即执行
-        API-->>R: 3.1 tool_call_1 JSON 拼接完成
-        R->>T1: 3.2 立即执行 Read A
-        API-->>R: 3.3 tool_call_2 JSON 拼接完成
-        R->>T2: 3.4 立即执行 Read B
-        T1-->>R: 3.5 A 结果返回
-        API-->>R: 3.6 tool_call_3 JSON 拼接完成
-        R->>T3: 3.7 立即执行 Read C
-        T2-->>R: 3.8 B 结果返回
-        T3-->>R: 3.9 C 结果返回
-    end
+    Note right of API: 工具块完成即执行
+    API-->>R: 3.1 tool_call_1 JSON 拼接完成
+    R->>T1: 3.2 立即执行 Read A
+    API-->>R: 3.3 tool_call_2 JSON 拼接完成
+    R->>T2: 3.4 立即执行 Read B
+    T1-->>R: 3.5 A 结果返回
+    API-->>R: 3.6 tool_call_3 JSON 拼接完成
+    R->>T3: 3.7 立即执行 Read C
+    T2-->>R: 3.8 B 结果返回
+    T3-->>R: 3.9 C 结果返回
 
     Note over API,R: stop_reason = "tool_use"，SSE 流结束
     R->>API: 4.1 带三个 tool_result 发起新 SSE 请求
@@ -181,26 +181,20 @@ sequenceDiagram
     participant S as 服务端
     participant API as LLM API
 
-    rect rgb(220, 255, 220)
-        Note over C,API: 第一阶段：流式输出
-        S->>API: 1.1 SSE 请求
-        API-->>C: 1.2 SSE 流：文字 + tool_use
-        Note over C: stop_reason = "tool_use"<br/>SSE 流自然结束
-    end
+    Note over C,API: 第一阶段：流式输出
+    S->>API: 1.1 SSE 请求
+    API-->>C: 1.2 SSE 流：文字 + tool_use
+    Note over C: stop_reason = "tool_use"<br/>SSE 流自然结束
 
-    rect rgb(255, 248, 220)
-        Note over U,C: 第二阶段：审批
-        C->>U: 2.1 "要修改 src/app.ts？"
-        U->>C: 2.2 允许
-    end
+    Note over U,C: 第二阶段：审批
+    C->>U: 2.1 "要修改 src/app.ts？"
+    U->>C: 2.2 允许
 
-    rect rgb(220, 240, 255)
-        Note over C,API: 第三阶段：执行 + 新流
-        C->>S: 3.1 HTTP POST（tool_result）
-        S->>S: 3.2 执行工具
-        S->>API: 3.3 带工具结果，新 SSE 请求
-        API-->>C: 3.4 新 SSE 流
-    end
+    Note over C,API: 第三阶段：执行 + 新流
+    C->>S: 3.1 HTTP POST（tool_result）
+    S->>S: 3.2 执行工具
+    S->>API: 3.3 带工具结果，新 SSE 请求
+    API-->>C: 3.4 新 SSE 流
 ```
 
 
