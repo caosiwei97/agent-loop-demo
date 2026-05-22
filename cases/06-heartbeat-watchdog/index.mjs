@@ -1,239 +1,111 @@
 /**
- * @title SSE 心跳 + 超时检测
+ * @title 心跳看门狗
  * @group 容错机制
- * @description 演示如何检测"沉默的杀手"——连接没断但不再推送数据
+ * @description 用 Promise.race 检测流是否卡住。如果超过指定时间没有新事件，
+ *   判定为超时并恢复。相比 case-03，新增了 watchdog() 超时检测机制。
  */
 
-import { createMockModel } from '../lib/mock-model.mjs';
+import { createMultiTurnModel } from '../lib/mock-model.mjs';
 import { streamText } from 'ai';
+import { allTools } from '../lib/mock-tools.mjs';
 
-console.log('=== Case 06: SSE 心跳 + 超时检测 ===\n');
+// ═══ 本案例新增 ═══
+// +watchdog() — 基于 Promise.race 的心跳超时检测
+// +超时后中断流并标记，触发恢复逻辑
+// ══════════════════
 
-console.log('[概念] TCP 连接还活着，但服务器不再推送数据');
-console.log('[概念] 这比直接断开更危险 —— 客户端以为一切正常，实际已经"死"了');
-console.log('');
-
-// ---- 模拟器 ----
-// 用简化的方式模拟服务端心跳和客户端超时检测
-
-class HeartbeatServer {
-  constructor(heartbeatInterval, label) {
-    this.heartbeatInterval = heartbeatInterval;
-    this.label = label;
-    this.listeners = [];
-    this.running = false;
-    this.dataInterval = null;
-    this.heartbeatTimer = null;
-  }
-
-  onData(fn) { this.listeners.push(fn); }
-
-  start(dataChunks, chunkInterval, stopAfterMs) {
-    this.running = true;
-    let chunkIdx = 0;
-    const startTime = Date.now();
-
-    // 发送数据
-    this.dataInterval = setInterval(() => {
-      if (!this.running) return;
-      if (chunkIdx < dataChunks.length) {
-        const msg = dataChunks[chunkIdx++];
-        this.listeners.forEach(fn => fn({ type: 'data', data: msg, time: Date.now() - startTime }));
+/**
+ * 心跳看门狗：给异步迭代器加超时保护
+ * @param {AsyncIterable} stream - fullStream 迭代器
+ * @param {number} timeoutMs - 单个事件最长等待时间
+ * @returns {AsyncGenerator} - 带超时保护的事件流
+ */
+async function* watchdog(stream, timeoutMs = 5000) {
+  const iterator = stream[Symbol.asyncIterator]();
+  while (true) {
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('WATCHDOG_TIMEOUT')), timeoutMs)
+    );
+    try {
+      const { value, done } = await Promise.race([iterator.next(), timeout]);
+      if (done) return;
+      yield value;
+    } catch (err) {
+      if (err.message === 'WATCHDOG_TIMEOUT') {
+        console.log(`\n  [看门狗] 超过 ${timeoutMs}ms 无响应，判定超时`);
+        yield { type: 'watchdog-timeout' };
+        return;
       }
-    }, chunkInterval);
-
-    // 发送心跳
-    this.heartbeatTimer = setInterval(() => {
-      if (!this.running) return;
-      this.listeners.forEach(fn => fn({ type: 'heartbeat', time: Date.now() - startTime }));
-    }, this.heartbeatInterval);
-
-    // 可选：在指定时间后停止发送
-    if (stopAfterMs) {
-      setTimeout(() => {
-        clearInterval(this.dataInterval);
-        clearInterval(this.heartbeatTimer);
-        this.dataInterval = null;
-        this.heartbeatTimer = null;
-        this.running = false;
-        this.listeners.forEach(fn => fn({ type: 'stopped', time: Date.now() - startTime }));
-      }, stopAfterMs);
+      throw err;
     }
-
-    return this;
-  }
-
-  stop() {
-    this.running = false;
-    clearInterval(this.dataInterval);
-    clearInterval(this.heartbeatTimer);
   }
 }
 
-class TimeoutDetector {
-  constructor(timeout, checkInterval) {
-    this.timeout = timeout;
-    this.checkInterval = checkInterval;
-    this.lastDataAt = Date.now();
-    this.alive = true;
-    this.timer = null;
-    this.onTimeout = null;
-  }
+const model = createMultiTurnModel([
+  // 第1轮：正常工具调用
+  [
+    { type: 'text-delta', textDelta: '我来读取文件...' },
+    { type: 'tool-call', toolCallType: 'function', toolCallId: 'call_1', toolName: 'read_file', args: '{"path":"src/utils.ts"}' },
+    { type: 'finish', finishReason: 'tool-calls', usage: { promptTokens: 10, completionTokens: 20 } },
+  ],
+  // 第2轮：正常完成
+  [
+    { type: 'text-delta', textDelta: '文件内容正常，没有需要修复的问题。' },
+    { type: 'finish', finishReason: 'stop', usage: { promptTokens: 30, completionTokens: 25 } },
+  ],
+]);
 
-  feed() {
-    this.lastDataAt = Date.now();
-  }
+async function agentLoop() {
+  const messages = [{ role: 'user', content: '帮我查看 src/utils.ts 然后修复问题' }];
+  let step = 0;
+  const MAX_STEPS = 5;
 
-  start() {
-    this.timer = setInterval(() => {
-      const elapsed = Date.now() - this.lastDataAt;
-      if (elapsed > this.timeout && this.alive) {
-        this.alive = false;
-        clearInterval(this.timer);
-        if (this.onTimeout) this.onTimeout(elapsed);
+  console.log('[用户]', messages[0].content);
+
+  while (true) {
+    step++;
+    console.log(`\n── 第 ${step} 轮 ──`);
+
+    // 1. 调用模型
+    const result = streamText({ model, messages, tools: allTools, maxSteps: 1 });
+
+    // 2. 消费流（带看门狗保护）
+    let text = '';
+    let hasToolCall = false;
+    let timedOut = false;
+    for await (const event of watchdog(result.fullStream, 5000)) {
+      if (event.type === 'watchdog-timeout') {
+        timedOut = true;
+        break;
+      } else if (event.type === 'text-delta') {
+        text += event.textDelta;
+        process.stdout.write(event.textDelta);
+      } else if (event.type === 'tool-call') {
+        hasToolCall = true;
+        console.log(`\n  [工具调用] ${event.toolName}(${JSON.stringify(event.args)})`);
+      } else if (event.type === 'tool-result') {
+        console.log(`  [工具结果] ${event.toolName} → ${String(event.result).slice(0, 60)}...`);
       }
-    }, this.checkInterval);
-    return this;
+    }
+
+    // 超时恢复：注入提示让模型继续
+    if (timedOut) {
+      console.log('  [恢复] 注入超时恢复消息，重新开始本轮');
+      messages.push({ role: 'assistant', content: text });
+      messages.push({ role: 'user', content: '你似乎卡住了，请继续。' });
+      continue;
+    }
+
+    // 3. 退出判断
+    if (!hasToolCall) { console.log('\n[退出] 模型完成，无工具调用'); break; }
+    if (step >= MAX_STEPS) { console.log('\n[退出] 达到最大轮次'); break; }
+
+    // 4. 组装下轮
+    const response = await result.response;
+    messages.push(...response.messages);
   }
 
-  stop() {
-    clearInterval(this.timer);
-  }
+  console.log(`\n[完成] 共 ${step} 轮`);
 }
 
-// ---- 场景 1：正常运行 ----
-
-async function scenario1() {
-  console.log('--- Scenario 1: 正常运行 (心跳保活) ---\n');
-
-  const server = new HeartbeatServer(500, 'S1');
-  const detector = new TimeoutDetector(1500, 200);
-  detector.onTimeout = (elapsed) => {
-    console.log(`  [超时检测] 超时! ${elapsed}ms 没有收到数据`);
-  };
-  detector.start();
-
-  server.onData((event) => {
-    detector.feed();
-    if (event.type === 'data') {
-      console.log(`  [${event.time}ms] 收到数据: "${event.data}"`);
-    } else if (event.type === 'heartbeat') {
-      console.log(`  [${event.time}ms] 收到心跳 (连接保活)`);
-    }
-  });
-
-  server.start(
-    ['token-1', 'token-2', 'token-3', 'token-4', 'token-5'],
-    300,   // 每 300ms 发一个数据
-    null   // 不停止
-  );
-
-  await new Promise(r => setTimeout(r, 2500));
-  server.stop();
-  detector.stop();
-  console.log(`  结果: 超时检测状态 = ${detector.alive ? '正常' : '超时'} (预期: 正常)\n`);
-}
-
-// ---- 场景 2：服务器停止发送 ----
-
-async function scenario2() {
-  console.log('--- Scenario 2: 服务器停止发送 (超时检测) ---\n');
-
-  const server = new HeartbeatServer(500, 'S2');
-  const detector = new TimeoutDetector(1500, 200);
-  let detectedAt = null;
-  detector.onTimeout = (elapsed) => {
-    detectedAt = Date.now();
-    console.log(`  [超时检测] 检测到沉默! ${elapsed}ms 没有收到任何数据或心跳`);
-  };
-  detector.start();
-
-  server.onData((event) => {
-    detector.feed();
-    if (event.type === 'data') {
-      console.log(`  [${event.time}ms] 收到数据: "${event.data}"`);
-    } else if (event.type === 'heartbeat') {
-      console.log(`  [${event.time}ms] 收到心跳`);
-    } else if (event.type === 'stopped') {
-      console.log(`  [${event.time}ms] *** 服务器停止发送 (心跳+数据全部停止) ***`);
-    }
-  });
-
-  server.start(
-    ['token-1', 'token-2', 'token-3'],
-    200,   // 每 200ms 发一个数据
-    800    // 800ms 后停止一切发送
-  );
-
-  await new Promise(r => setTimeout(r, 3000));
-  server.stop();
-  detector.stop();
-  console.log(`  结果: 超时检测到断开 = ${detectedAt ? '是' : '否'} (预期: 是)\n`);
-}
-
-// ---- 场景 3：恢复 + "对账" ----
-
-async function scenario3() {
-  console.log('--- Scenario 3: 恢复 + "对账" ---\n');
-
-  const server = new HeartbeatServer(500, 'S3');
-  const detector = new TimeoutDetector(1500, 200);
-  let receivedAfterRecovery = [];
-
-  detector.onTimeout = (elapsed) => {
-    console.log(`  [超时检测] 检测到沉默! 开始恢复流程...`);
-    console.log(`  [对账]  检查已收到的数据，确认丢失了哪些 token`);
-    console.log(`  [对账]  已收到: ${receivedAfterRecovery.join(', ')}`);
-    console.log(`  [恢复]  重新建立连接，从断点继续...`);
-
-    // 模拟重新连接
-    setTimeout(() => {
-      console.log(`  [恢复]  连接重建，继续接收...`);
-      server.running = true;
-      detector.feed(); // 重置检测器
-      detector.alive = true;
-      detector.start();
-    }, 300);
-  };
-  detector.start();
-
-  server.onData((event) => {
-    detector.feed();
-    if (event.type === 'data') {
-      receivedAfterRecovery.push(event.data);
-      console.log(`  [${event.time}ms] 收到: "${event.data}"`);
-    } else if (event.type === 'heartbeat') {
-      console.log(`  [${event.time}ms] 心跳`);
-    } else if (event.type === 'stopped') {
-      console.log(`  [${event.time}ms] *** 服务器停止 ***`);
-    }
-  });
-
-  server.start(
-    ['token-1', 'token-2', 'token-3', 'token-4', 'token-5', 'token-6'],
-    200,
-    800
-  );
-
-  await new Promise(r => setTimeout(r, 4000));
-  server.stop();
-  detector.stop();
-  console.log(`  结果: 最终收到 ${receivedAfterRecovery.length} 个 token\n`);
-}
-
-// ---- 运行所有场景 ----
-
-async function main() {
-  await scenario1();
-  await scenario2();
-  await scenario3();
-
-  console.log('--- 要点总结 ---');
-  console.log('1. SSE 心跳: 服务器定期发送 ": heartbeat" 注释帧，保持连接活跃');
-  console.log('2. 客户端超时检测: 定期检查最后收到数据的时间，超时则判定连接失效');
-  console.log('3. 心跳间隔 < 超时阈值: 确保正常情况下检测器不会被误触');
-  console.log('4. 检测到断开后需要"对账": 确认哪些数据已收到，哪些需要重传');
-  console.log('5. 典型参数: 心跳 15s, 超时 30s, 检查间隔 5s');
-}
-
-main().catch(console.error);
+agentLoop().catch(console.error);
