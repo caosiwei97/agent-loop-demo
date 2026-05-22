@@ -6,3 +6,4 @@ dist/
 .playwright-mcp
 _run_*.mjs
 .sisyphus/
+tmp/

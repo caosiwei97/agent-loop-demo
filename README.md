@@ -13,35 +13,6 @@
 - **Excalidraw 蓝图** — 核心案例的交互式架构图（部分案例）
 - **交互演示** — 可在浏览器中直接运行的 HTML 演示（部分案例）
 
-## 教学内容
-
-### 一、流式响应
-
-| 案例 | 说明 |
-|------|------|
-| SSE 流式响应基础 | Server-Sent Events 的基本原理与实现 |
-| Tool Call 解析 | 从 SSE 流中解析工具调用的完整流程 |
-| 边流式边执行 | 流式接收的同时并行执行工具调用 |
-| 并发安全 | 多个工具并发执行时的状态管理与竞态防护 |
-
-### 二、容错机制
-
-| 案例 | 说明 |
-|------|------|
-| 指数退避 + 随机抖动 | 失败重试的经典策略，避免惊群效应 |
-| SSE 心跳 + 看门狗 | 检测连接存活、自动断线重连 |
-| 三层降级链 | 主模型 → 备选模型 → 本地回退的渐进降级 |
-
-### 三、运行时安全（三根保险丝）
-
-| 案例 | 说明 |
-|------|------|
-| 死循环检测：哈希指纹 | 用调用指纹 + 结果指纹检测重复循环 |
-| 死循环检测：四种检测器 | 频率、序列、语义、递归四种检测策略 |
-| Token 预算控制 | 90% 预警 + 递减回报检测，防止 token 超限 |
-| 输出截断恢复 | `finishReason === 'length'` 时的渐进式恢复 |
-| Agent Loop 完整骨架 | 把三根保险丝和七种退出路径串联成完整循环 |
-
 ## 技术架构
 
 ```
@@ -49,19 +20,28 @@ agent-teaching-demo/
 ├── source/                      # 知识来源（人工维护）
 │   ├── Agent-Loop-深度分享.md    # 原始教学长文
 │   └── assets/                  # 原始素材（Excalidraw 蓝图等）
-├── cases/                       # 12 个教学案例（AI 基于来源生成）
-│   └── lib/                     # 共享模块（mock-model、retry、loop-detection 等）
-├── apps/
-│   ├── server/                  # Hono 后端 — 案例管理、代码执行、静态资源
-│   └── web/                     # React + Vite 前端 — 知识树、可视化、交互式 UI
+├── cases/                       # 12 个教学案例
+│   ├── lib/                     # 共享模块（mock-model、retry、loop-detection 等）
+│   ├── 01-sse-streaming/        # 每个案例包含：index.mjs / knowledge.md / diagram.mmd / mindmap.md / interactive.html
+│   └── ...
+├── src/                         # Astro + React 前端
+│   ├── pages/index.astro        # 单页入口
+│   ├── components/              # React 组件（App、KnowledgeTree、ContentArea、TopBar）
+│   ├── tabs/                    # Tab 视图（Code、Diagram、Excalidraw、Interactive、Knowledge）
+│   ├── demos/                   # 交互演示组件
+│   ├── hooks/useWebContainer.ts # WebContainer 沙箱执行
+│   └── lib/                     # 类型定义、案例加载器
+├── public/                      # 静态资源（字体、图标、数据）
+└── astro.config.mjs             # Astro 配置（静态输出、COOP/COEP 头）
 ```
 
 ### 技术栈
 
-- **前端**：React 19 + Ant Design 6 + Vite 8 + TypeScript
+- **框架**：Astro（静态输出）+ React 19 + TypeScript
+- **UI**：Ant Design 6
 - **可视化**：Excalidraw（交互画板）、Mermaid（流程图）、Markmap（思维导图）
-- **后端**：Hono + Node.js，提供 REST API 和代码沙箱执行
-- **工程**：pnpm workspace monorepo
+- **代码执行**：WebContainer API（浏览器内 Node.js 沙箱）
+- **工程**：pnpm
 
 ### 前端 Tab 页
 
@@ -89,15 +69,70 @@ agent-teaching-demo/
 # 安装依赖
 pnpm install
 
-# 同时启动前端和后端（开发模式）
-pnpm dev
-
-# 或分别启动
-pnpm dev:server   # 后端 → http://localhost:38888
-pnpm dev:web      # 前端 → http://localhost:5173
+# 开发模式
+pnpm dev        # http://localhost:5173
 ```
 
-打开 http://localhost:5173 即可看到教学界面。
+### 构建与预览
+
+```bash
+pnpm build
+```
+
+构建产物在 `dist/` 目录。本项目使用了 [WebContainer](https://webcontainers.io/)，它依赖 `SharedArrayBuffer`，浏览器要求页面处于 **Cross-Origin Isolated** 状态。因此静态服务器必须发送以下响应头：
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+#### 方式一：astro preview（默认支持）
+
+```bash
+pnpm preview
+```
+
+Astro 内置的预览服务器已自动配置 COOP/COEP 头。
+
+#### 方式二：serve + serve.json
+
+在项目根目录创建 `serve.json`：
+
+```json
+{
+  "headers": [
+    {
+      "source": "**/*",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+      ]
+    }
+  ]
+}
+```
+
+```bash
+npx serve dist
+```
+
+#### 方式三：Python
+
+```bash
+python3 -c "
+import http.server
+class H(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cross-Origin-Opener-Policy','same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy','require-corp')
+        super().end_headers()
+http.server.HTTPServer(('0.0.0.0',4321),H).serve_forever()
+"
+```
+
+然后访问 `http://localhost:4321`。
+
+> **注意**：直接双击 `dist/index.html`（`file://` 协议）或使用不带 COOP/COEP 头的静态服务器，WebContainer 会报错：`SharedArrayBuffer transfer requires self.crossOriginIsolated`。
 
 ### 直接运行单个案例
 
