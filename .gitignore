@@ -7,3 +7,4 @@ dist/
 _run_*.mjs
 .sisyphus/
 tmp/
+.DS_Store
